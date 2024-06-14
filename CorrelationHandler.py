@@ -40,7 +40,7 @@ class CorrelationHandler:
         self.__cf = self.__se.Clone(f'hCF_{self.name}')
         self.__cf.Reset()
         self.__cf.GetYaxis().SetTitle('C(k*)')
-        for i in range(1, self.__cf.GetNbinsX()):
+        for i in range(1, self.__cf.GetNbinsX()+1):
             vSame = self.__se.GetBinContent(i)
             eSame = self.__se.GetBinError(i)
             vMixed = self.__me.GetBinContent(i)
