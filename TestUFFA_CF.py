@@ -8,14 +8,14 @@ import numpy as np
 
 # NOTE: Update the config in run_UFFA method for more specific changes
 TestingConfiguration = {
-            "nbins" : 1000,
-            "kstar_range" : (0, 0.5),
-            "normalization_range" : (0.28, 0.4),
-            "rebin_factors" : [2,5,10],
-            "TDir" : "femto-dream-pair-task-track-track",
-            "input_file" : "TestUFFA2.root",
-            "precision" : 0.001,
-            "precision_rebin" : 0.01
+            "nbins" : 1000,                                 # bin number for original histogram
+            "kstar_range" : (0, 0.5),                       # k* range
+            "normalization_range" : (0.28, 0.4),            # range in which the CF is normalized
+            "rebin_factors" : [2,5,10],                     # rebin factors used to rebin CF
+            "TDir" : "femto-dream-pair-task-track-track",   # directory of the SE/ME distributions inside the .root file
+            "input_file" : "TestUFFA2.root",                # file that will be generated in the test
+            "precision" : 0.001,                            # precision for the original CF
+            "precision_rebin" : 0.01                        # precision for the rebinned CFs
         }
 
 class TestCF(unittest.TestCase):
@@ -74,6 +74,7 @@ class TestCF(unittest.TestCase):
         # check if rebinning is possible
         assert len(distribution_list)%rebin_factor == 0, "Rebin not possible. Binnumber is not a multiple of the rebin factor!"
 
+        # rebin the distributions
         nbins_rebinned = int(len(distribution_list)/rebin_factor)
         distribution_list_rebinned = []
         for i in range(0, nbins_rebinned, 1):
@@ -84,12 +85,14 @@ class TestCF(unittest.TestCase):
         return distribution_list_rebinned
 
     def CalculateCF(self, SE_distribution, ME_distribution):
+        # check if distributions have same bin number
         assert len(SE_distribution)==len(ME_distribution), "SE and ME distributions do not have same binnumber."
 
         CF_vals = [SE_distribution[i]/ME_distribution[i] for i in range(len(SE_distribution))]
         return CF_vals
 
     def update_bins(self, rebin_factor):
+        # needed for rebinning
         self.nbins = int(TestingConfiguration["nbins"]/rebin_factor)
         self.bin_edges = np.linspace(self.kstar_min, self.kstar_max, self.nbins+1)
         self.bin_centers = (self.bin_edges[:-1] + self.bin_edges[1:]) / 2
@@ -103,12 +106,12 @@ class TestCF(unittest.TestCase):
         return CF_normalized
             
     def tearDown(self):
-        # # delete files
-        # if os.path.exists("TestUFFA.root"):
-        #     os.remove("TestUFFA.root")
-        # if os.path.exists("UFFA_pd.root"):
-        #     os.remove("UFFA_pd.root")
-        pass
+        # delete files
+        if os.path.exists(TestingConfiguration["input_file"]):
+            os.remove(TestingConfiguration["input_file"])
+        if os.path.exists("UFFA_pd.root"):
+            os.remove("UFFA_pd.root")
+        # pass
 
     def run_CFtest(self, CFhisto_UFFA, CFHisto_predicted, index, delta):
         self.assertAlmostEqual(
@@ -119,6 +122,7 @@ class TestCF(unittest.TestCase):
             )
         
     def run_UFFA(self):
+        # runs UFFA on the input files
         DataDir = "./"
         InputFile = TestingConfiguration["input_file"]
 
@@ -195,17 +199,16 @@ class TestCF(unittest.TestCase):
             SE_rebinned = self.rebinDistribution(self.SE_list, rebin_factor)
             ME_rebinned = self.rebinDistribution(self.ME_list, rebin_factor)
 
-            # important: for rebinned we need to update our bins
+            # rebinned we need to update our bins
             self.update_bins(rebin_factor)
             
-            # ame as above
+            # same as above
             tempFile = ROOT.TFile.Open(TestingConfiguration["input_file"], "UPDATE")
             CF_Histo = ROOT.TH1F(f"CF_rebin{rebin_factor}", f"CF normalized Histogram rebin_{rebin_factor}", self.nbins, self.kstar_min, self.kstar_max)
 
             # CF
             CF = self.CalculateCF(SE_rebinned, ME_rebinned)
             CF_normalized = self.normalizeCF(CF)
-
 
             for i in range(self.nbins):
                 CF_Histo.SetBinContent(i+1, CF_normalized[i])
@@ -215,9 +218,11 @@ class TestCF(unittest.TestCase):
             CF_Histo.Write()
             tempFile.Close()
 
+            # load UFFA CF rebinned
             UFFA_output_file = ROOT.TFile.Open("UFFA_pd.root", "READ")
             CF_UFFAHisto = UFFA_output_file.Get(f"femto-dream-pair-task-track-track_std/rebin_{rebin_factor}").Get("CF")
 
+            # compare bin by bin
             for i in range(1, self.nbins+1, 1):
                 with self.subTest(i=i):
                     self.run_CFtest(CF_UFFAHisto, self.CF_Histo, index=i, delta=TestingConfiguration["precision_rebin"])
