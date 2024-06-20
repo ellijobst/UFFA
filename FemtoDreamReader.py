@@ -2,25 +2,35 @@ import ROOT
 import FileReader as FR
 
 class FemtoDreamReader(FR.FileReader):
-    def __init__(self, ifile, directory = None):
-        if directory:
-            if directory == "":
-                directory = "femto-dream-pair-task-track-track"
-            elif directory[0] == '_':
-                directory = "femto-dream-pair-task-track-track" + directory
-        FR.FileReader.__init__(self, ifile, directory)
+    def __init__(self, ifile, func, directory = None):
+        # ifile = conf['filepath']
+        # if directory:
+        #     if directory == "":
+        #         directory = "femto-dream-pair-task-track-track"
+        #     elif directory[0] == '_':
+        #         directory = "femto-dream-pair-task-track-track" + directory
+        FR.FileReader.__init__(self, ifile, directory )
+        self._function = func
 
     ### Getter Functions ###
     def get_pt(self):
+        if self._function == "cf":
+            return None
         return self.GetHisto("Tracks_one/hPt")
 
     def get_pt_mc(self):
+        if self._function == "cf":
+            return None
         return self.GetHisto("Tracks_one_MC/hPt_ReconNoFake")
 
     def get_dca(self):
+        if self._function == "cf":
+            return None
         return self.GetHisto("Tracks_one/hDCAxy")
 
     def get_dca_mc(self):
+        if self._function == "cf":
+            return None
         return [self.GetHisto("Tracks_one_MC/hDCAxy_Primary"), \
                 self.GetHisto("Tracks_one_MC/hDCAxy_Secondary"), \
                 self.GetHisto("Tracks_one_MC/hDCAxy_SecondaryDaughterLambda"), \
@@ -29,21 +39,32 @@ class FemtoDreamReader(FR.FileReader):
                 self.GetHisto("Tracks_one_MC/hDCAxy_Material")]
 
     def get_zvxt(self):
+        if self._function == "cf":
+            return None
         return self.GetHisto("Event/zvtxhist")
 
     def get_event(self):
+        if self._function == "cf":
+            return None
         return self.GetHistos("Event")
 
     def get_tracks(self):
+        if self._function == "cf":
+            return None
         return self.GetHistos("Tracks_one")
 
     def get_tracks_mc(self):
+        if self._function == "cf":
+            return None
         return self.GetHistos("Tracks_one_MC")
 
     def get_v0(self):
-        return [self.GetHistos("V0_two"), \
-                self.GetHistos("V0Child_pos"), \
-                self.GetHistos("V0Child_neg")]
+        if self._function == "cf":
+            return None
+        else:
+            return [self.GetHistos("V0_two"), \
+                    self.GetHistos("V0Child_pos"), \
+                    self.GetHistos("V0Child_neg")]
 
     def get_se(self):
         return self.GetHisto("SameEvent/relPairDist")

@@ -24,7 +24,8 @@ def UFFA(settings):
 # correlation function
 def UFFA_cf(settings):
     conf = config(settings)
-    fdr = FDR.FemtoDreamReader(conf['fullpath'], conf['fileTDir'])
+    # fdr = FDR.FemtoDreamReader(conf['fullpath'], conf['fileTDir'])
+    fdr = FDR.FemtoDreamReader(conf["filepath"], conf["function"])
     ch = cf_handler(fdr, conf)
     fds = FDS.FemtoDreamSaver(conf, ch.get_histos())
 
@@ -125,7 +126,7 @@ def UFFA_syst(settings):
 
     # loop over data variations in file and calculate the cf for each
     # which is then saved in a th2 from which the systematic error is computed and saved in a th1
-    file_dir = fdr.get_dir();
+    file_dir = fdr.get_dir()
     fdr.cd(0)           # class method of FileSaver to return to root of file
     folders = fdr.get_folder_names()
     for folder in folders:
@@ -243,7 +244,7 @@ def UFFA_syst_3d(settings):
 
     # loop over data variations in file and calculate the cf for each
     # which is then saved in a th2 from which the systematic error is computed and saved in a th1
-    file_dir = fdr.get_dir();
+    file_dir = fdr.get_dir()
     fdr.cd(0)                               # class method of FileSaver to return to root of file
     folders = fdr.get_folder_names()
     folder_counter = -1
@@ -341,11 +342,15 @@ def UFFA_syst_3d(settings):
     all_histos = (histos, syst_plots, tgraphs, cf_raw)
     fds = FDS.FemtoDreamSaver(conf, all_histos)
 
-# class that returns the systematics of a cf
-# add variations with AddVar(var) before calling GenSyst()
-# GetAll() returns [th2 cf, th2 difference, th1 systematics, th1 std dev]
+
 class Systematics():
-    counter = 0
+    """
+    class that returns the systematics of a CF
+    ---
+    - add variations with AddVar(var) before calling GenSyst()
+    - GetAll() : returns [th2 cf, th2 difference, th1 systematics, th1 std dev]
+    """
+    counter = 0 #TODO: das nicht hardcoden sondern auch ins config? außerdem nichts außerhalb von methoden haben? 
     ybins = 1200
     def __init__(self, cf):
         self._cf = cf
@@ -418,8 +423,9 @@ class cf_handler():
         self._norm  = conf['normalize']         # normalization range
         self._perc  = conf['percentile']        # percentile range
         self._rew_range = conf['rewrange']      # reweighting range
-        self._name_se = conf['nameSE']
-        self._name_me = conf['nameME']
+        self._name_se = conf['SE_path']
+        self._name_me = conf['ME_path']
+        
         self._se = None
         self._me = None
         self._se_mc = None
@@ -466,10 +472,10 @@ class cf_handler():
         elif self._htype in ['4d', 'rew4d']:
             self._se, self._me = self._file.get_4d()
 
-        if self._name_se and not self._name_me:
-            self._se = self._file.get_histo(self._name_se)
-        if self._name_me and not self._name_se:
-            self._me = self._file.get_histo(self._name_me)
+        # if self._name_se and not self._name_me:
+        #     self._se = self._file.get_histo(self._name_se)
+        # if self._name_me and not self._name_se:
+        #     self._me = self._file.get_histo(self._name_me)
 
         if self._mc:
             self._tracks_mc = self._file.get_tracks_mc()
@@ -487,6 +493,7 @@ class cf_handler():
         histos_mc = []
         histos_unw = []
         histos_unw_mc = []
+
         if self._atype == 'int':        # integrated analysis
             histos, histos_unw = getIntegrated(self._se, self._me, self._htype, self._rebin, self._norm, self._rew_range)
             if self._mc:
@@ -1017,8 +1024,8 @@ def config(dic_conf):
             "outDir":       "string" -> output directory
             "rename":       "string" -> rename output file
             "fileTDir":     "string" -> root file directory: path to directory inside the root file
-            "nameSE":       "string" -> path + name of the se plot inside the provided "fileTDir" if given
-            "nameME":       "string" -> same as nameSE but for the ME distribution
+            "SE_path":       "string" -> path + name of the se plot inside the provided "fileTDir" if given
+            "ME_path":       "string" -> same as SE_path but for the ME distribution
             "newfile":      'new', 'recreate', 'update' -> same option as in ROOT, 'new' will rename if file already exists
             "mc":           'true', 'false' -> save monte carlo data from provided root file
             "mcTDir":       "string" -> root file directory for the monte carlo data
@@ -1061,8 +1068,8 @@ def config(dic_conf):
             "file":             None,
             "fullpath":         None,
             "fileTDir":         "",
-            "nameSE":           "",
-            "nameME":           "",
+            "SE_path":           "",
+            "SE_path":           "",
             "newfile":          None,
             "mc":               None,
             "mcTDir":           "",
@@ -1126,8 +1133,10 @@ def config(dic_conf):
                'data',          # not used
                'bins3d',        # bins to split 3d histo
                'bins',          # bins to split 2d histo
-               'nameSE',        # root folder with SE histo
-               'nameME',        # root folder with ME histo
+               'SE_path',        # root folder with SE histo
+               'ME_path',        # root folder with ME histo
+               "filepath",      # file path of input root file
+               "atype"
                ]
     for entry in entries:
         if entry in dic_conf:
@@ -1168,7 +1177,7 @@ def config(dic_conf):
         if dic_conf['newfile'] in [3, "update"]:
             dic['newfile'] = "update"
 
-    # histogram and analysis type
+    # histogram and analysis type #TODO: was ist das? WArum resettet es unsere eingaben?
     if 'type' in dic_conf:
         dic_conf['atype'] = dic_conf['type'][0]
         dic_conf['htype'] = dic_conf['type'][1]

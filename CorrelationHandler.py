@@ -29,6 +29,7 @@ class CorrelationHandler:
             print("Input ME is not a TH1!")
 
     def _normalize(self, hist):
+
         nBins = hist.GetNbinsX()
         hist.Scale(1 / hist.Integral(1, nBins + 1))
 
@@ -54,7 +55,8 @@ class CorrelationHandler:
                 self.__cf.SetBinContent(i, vCF)
                 self.__cf.SetBinError(i, eCF)
 
-    def normalize_cf(self, low=0.6, high=1.):
+
+    def normalize_cf(self, low=0.6, high=1.):#TODO: warum hard coded limits? is this not the normalization range? wenn es default ist sollte es irgendwo stehen!
         if not self.__cf:
             print('Compute the correlation function first')
             return

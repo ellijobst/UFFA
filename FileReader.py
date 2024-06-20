@@ -4,17 +4,19 @@ import FileUtils as FU
 class FileReader:
     DEBUG = False
     def __init__(self, ifile, directory = None):
-        ifile = FU.path_expand(ifile)
-        if not ROOT.gSystem.AccessPathName(ifile):
+        ifile = FU.path_expand(ifile) # adds path of home directory if "~/PATH" is used in the path
+        if not ROOT.gSystem.AccessPathName(ifile): #why not?
             self._ifile = ROOT.TFile(ifile, "read")
         else:
             print("File \"" + ifile + "\" not found!")
             return
         self._tree  = [self._ifile]
         self._wdir  = self._ifile
-        if directory:
-            directory = FU.path_fix(directory)
-            self._set_wdir(directory)
+        # der teil sollte nicht notwendig sein
+        # if directory:
+            # directory = FU.path_fix(directory) #removes unnecessary "/" in front and end of the string
+            # is unnecessary since it is already done in self._set_wdir()
+            # self._set_wdir(directory)
 
     # find object in dir_obj
     def _find_obj(self, obj_name, dir_obj):
@@ -22,7 +24,7 @@ class FileReader:
         try:                # try to find in TDirectory
             obj = dir_obj.Get(obj_name)
         except:
-            pass
+            pass #TODO
         if not obj:         # try to find in TList
             try:
                 obj = dir_obj.FindObject(obj_name)
@@ -32,7 +34,7 @@ class FileReader:
 
     # set directory
     def _set_wdir(self, dir_name):
-        dir_name = FU.path_fix(dir_name)
+        dir_name = FU.path_fix(dir_name) #removes unnecessary "/" in front and end of the string
         name_list = dir_name.rsplit('/')
         for name in name_list:
             dir_new = self._find_obj(name, self._wdir)              # find in current directory
@@ -90,9 +92,11 @@ class FileReader:
             histo = self._get_obj(histo_name)
         else:
             histo = self._get_obj(dir_name + '/' + histo_name)
+        
         if not histo:
+            print(f"Histogram {histo_name} was not found!")
             return None
-        histo._set_dir(histo)
+        # histo._set_dir(histo) #should not be needed if we put the explicit path to the SE TDir
         return histo
 
     def GetHisto(self, histo_name, dir_name = None):
@@ -103,7 +107,7 @@ class FileReader:
             histo = self._get_obj(dir_name + '/' + histo_name)
         if not histo:
             return None
-        self._set_dir(histo)
+        self._set_dir(histo) 
         return histo
 
     # function to retrieve all histograms in a directory as a list

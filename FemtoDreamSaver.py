@@ -80,13 +80,15 @@ class FemtoDreamSaver(FS.FileSaver):
         hist_v0    = self._histos[7]
         if self._mc:
             hist_track_mc = self._histos[6]
-            hist_pur = getPurity(hist_track[0], hist_track_mc[0])
+            hist_pur = getPurity(hist_track[0], hist_track_mc[0]) #NOT DEFINED!
 
-        default = "femto-dream-pair-task-track-track"
-        if self._idir == default:
-            dir_root = self._file.mkdir(default + "_std")
-        else:
-            dir_root = self._file.mkdir(self._idir)
+        # default = "femto-dream-pair-task-track-track"
+        # if self._idir == default:
+        #     dir_root = self._file.mkdir(default + "_std")
+        # else:
+        #     dir_root = self._file.mkdir(self._idir)
+        # dir_root.cd()
+        dir_root = self._file.mkdir("UFFA_Output")
         dir_root.cd()
 
         if self._atype == 'int':                        # integrated

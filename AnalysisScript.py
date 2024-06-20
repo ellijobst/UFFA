@@ -1,5 +1,6 @@
 import FemtoAnalysis as FA
-import FemtoDreamReader as FDR
+from UFFAModes import UFFA
+# import FemtoDreamReader as FDR
 #import sys
 
 #   Current options include:
@@ -72,26 +73,28 @@ namelist = ['prim', 'lam', 'sig', 'fake']
 settings_cf = {
         "function":     'cf',
         "pair":         'pp',
-        "file":         filename,
-        "fileTDir":     "femto-dream-pair-task-track-track",
-        #"nameSE":       "SameEvent/relPairDist",
-        #"nameME":       "MixedEvent/relPairDist",
-        "newfile":      "new",
+        "filepath":     "./Final.root",
+        "SE_path":       "femto-dream-pair-task-track-track_apBase/SameEvent/relPairDist", #path to the SE distr. in the input file
+        "ME_path":       "femto-dream-pair-task-track-track_apBase/MixedEvent/relPairDist", #path to the ME distr. in the input file
+        "newfile":      "recreate", #mode for output file
         "outDir":       opath,
         "mc":           None,
         "mcTDir":       "",
-        "rename":       "test-limits",
-        "type":         ['dif', 'rew4d', 'mt'],
-        #"atype":        'dif',
-        #"htype":        'rew4d',
+        "rename":       "CF_Test",
+        "atype":        'int',
+        "dimension":    1, # dimension of the input histogram
+        "htype":        'kstar',
+        "kstar_axis":   0, #TODO: wo startet es?
+        "mult_axis":    1,
+        "higher_dimension_axis":   [[2, [0.1,0.2]]], #[axis_index, [projection range]]
         #"diff3d":       'mt',
         "bins3d":       mtBins,
         "bins":         multBins,
         "rebin":        [2, 5, 10],
-        "rewrange":     [0, 1.0],
+        # "rewrange":     [0, 1.0],
         "percentile":   [0, 20],
         "normalize":    [0.24, 0.34],
-        "debug":        True
+        "debug":        False
     }
 
 settings_tf = {
@@ -155,4 +158,5 @@ settings_syst2 = {
     }
 
 FA.UFFA(settings_cf)
+# UFFA.UFFA(settings_cf)
 
