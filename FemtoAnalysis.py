@@ -5,426 +5,31 @@ import FemtoDreamReader as FDR
 import CorrelationHandler as CH
 import CombinedTemplateFit as TF
 
-def UFFA(settings):
-    conf = config(settings)
-    if conf['function'] == 'cf':
-        UFFA_cf(conf)
-    elif conf['function'] == 'tf':
-        UFFA_tf(conf)
-    elif conf['function'] == 'tf2d':
-        UFFA_tf2d(conf)
-    elif conf['function'] == 'ctf':
-        UFFA_ctf(conf)
-    elif conf['function'] == 'syst':
-        if conf['htype'] in ['mtmult', 'rew3d', '4d', 'rew4d']:
-            UFFA_syst_3d(conf)
-        else:
-            UFFA_syst(conf)
-
-# correlation function
-def UFFA_cf(settings):
-    conf = config(settings)
-    # fdr = FDR.FemtoDreamReader(conf['fullpath'], conf['fileTDir'])
-    fdr = FDR.FemtoDreamReader(conf["filepath"], conf["function"])
-    ch = cf_handler(fdr, conf)
-    fds = FDS.FemtoDreamSaver(conf, ch.get_histos())
-
-# template fits
-def UFFA_tf(settings):
-    conf = config(settings)
-    if conf['file']:
-        fdr1 = FDR.FemtoDreamReader(conf['fullpath'], conf['fileTDir'])
-        dca_data = fdr1.get_dca()
-    elif conf['data']:
-        dca_data = conf['data']
-    else:
-        print('UFFA_tf: Missing input data!')
-    if conf['templates']:
-        if type(conf['templates']) == str:
-            fdr2 = FDR.FemtoDreamReader(conf['templates'], conf['mcTDir'])
-            dca_mcplots = fdr2.get_dca_mc()
-        else:
-            dca_mcplots = conf['templates']
-    else:
-        dca_mcplots = fdr1.get_dca_mc()
-
-    fds = FDS.FemtoDreamSaver(settings)
-    ofile = fds.getFile()
-
-    TF.TemplateFit(ofile, dca_data, dca_mcplots, conf['tftype'], conf['namelist'], conf['fitrange'], conf['signalrange'], conf['bins'], conf['rebin'], conf['outDir'], conf['temp_init'], conf['temp_limits'], conf['temp_fraction'], conf['print'])
-
-# template fits 2d
-def UFFA_tf2d(settings):
-    conf = config(settings)
-    dca_data = conf['data']
-    dca_mcplots = conf['templates']
-
-    fds = FDS.FemtoDreamSaver(settings)
-    ofile = fds.getFile()
-
-    TF.TemplateFit2D(ofile, dca_data, dca_mcplots, conf['namelist'], conf['fitrange'], conf['signalrange'], conf['bins'], conf['rebin'], conf['outDir'], conf['temp_init'], conf['temp_limits'], conf['temp_fraction'], conf['print'], conf['debug'])
-
-# combined template fits
-def UFFA_ctf(settings):
-    conf = config(settings)
-    if conf['file']:
-        fdr1 = FDR.FemtoDreamReader(conf['fullpath'], conf['fileTDir'])
-        dca_data = fdr1.get_dca()
-    elif conf['data']:
-        dca_data = conf['data']
-    else:
-        print('UFFA_tf: Missing input data!')
-    if conf['templates']:
-        if type(conf['templates']) == str:
-            fdr2 = FDR.FemtoDreamReader(conf['templates'], conf['mcTDir'])
-            dca_mcplots = fdr2.get_dca_mc()
-        else:
-            dca_mcplots = conf['templates']
-    else:
-        dca_mcplots = fdr1.get_dca_mc()
-
-    fds = FDS.FemtoDreamSaver(settings)
-    ofile = fds.getFile()
-
-    TF.CombinedFit(ofile, conf['outDir'], dca_data, dca_mcplots, conf['namelist'], conf['fitrange'], conf['signalrange'], conf['bins'], conf['rebin'], conf['temp_init'], conf['temp_limits'], conf['temp_fraction'], conf['print'])
-
-# systematics
-def UFFA_syst(settings):
-    conf = config(settings)
-    fdr = FDR.FemtoDreamReader(conf['fullpath'], conf['fileTDir'])
-
-    # default cf
-    ch = cf_handler(fdr, conf)
-    cf, cf_unw = ch.get_cf()                                # [[cf, [rebins]], [bin2...], ...], [[cf unw, [rebins]], [bin2...], ...]
-
-    # input same event for yield filtering
-    if conf['yield']:
-        se = fdr.get_se()
-        pair_num_se = se.Integral(se.FindBin(0), se.FindBin(conf['yield'][0]))
-    if conf['debug']:
-        se_all = ch.get_se()
-
-    cf_list = []
-    if conf['rebin']:
-        len_rebin = len(conf['rebin'])
-
-    if conf['atype'] == 'int':                              # integrated
-        ck, ck_rebin = cf[0]
-        cf_list.append([ck, ck_rebin])
-        syst = [[Systematics(ck), []]]                          # [[syst cf, [rebins]]]
-        if conf['rebin']:
-            for i in range(len_rebin):
-                syst[0][1].append(Systematics(ck_rebin[i]))
-    elif conf['atype'] == 'dif':                            # differential
-        syst = []
-        for n, [ck, ck_rebin] in enumerate(cf):
-            cf_list.append([ck, ck_rebin])
-            syst.append([Systematics(ck), []])                  # [[syst cf, [rebins]], [bin2...], ...]
-            if conf['rebin']:
-                for i in range(len_rebin):
-                    syst[n][1].append(Systematics(ck_rebin[i]))
-
-    # loop over data variations in file and calculate the cf for each
-    # which is then saved in a th2 from which the systematic error is computed and saved in a th1
-    file_dir = fdr.get_dir()
-    fdr.cd(0)           # class method of FileSaver to return to root of file
-    folders = fdr.get_folder_names()
-    for folder in folders:
-        fdr.cd(folder)
-
-        # allows to include/exclude specific variations
-        if conf['exclude'] and folder in conf['exclude']:
-            continue
-        elif conf['include']:
-            if folder in conf['include']:
-                pass
-            else:
-                continue
-        elif folder.rsplit('_')[-1][:3] != "Var":
-            continue
-
-        ch_var = cf_handler(fdr, conf)
-        cf_var, cf_var_unw = ch_var.get_cf()
-
-        if conf['debug']:
-            print("Variation: \"" + folder + "\"")
-        if conf['yield']:
-            se_var = fdr.get_se()
-            pair_num_var = se_var.Integral(se_var.FindBin(0), se_var.FindBin(conf['yield'][0]))
-            deviation = abs(pair_num_se - pair_num_var) / pair_num_se
-            if deviation > conf['yield'][1]:
-                if conf['debug']:
-                    dev = deviation * 100
-                    print("Integrated yield k*: [0, " + str(conf['yield'][0]) + ") differs by " + f"{dev:.1f} %")
-                    if deviation > conf['yield'][1]:
-                        print("Variation: Excluded!\n")
-                        continue
-        if conf['debug'] and conf['htype'] != 'k':
-            se_var_all = ch_var.get_se()
-            tab = '\t'
-            print("Differential yield:")
-            for n, bin1 in enumerate(se_var_all):
-                yield_all = se_all[n][0].Integral()
-                yield_all_var = se_var_all[n][0].Integral()
-                deviation = (abs(yield_all - yield_all_var) / yield_all) * 100
-                print(f"{tab}{conf['htype']:s}:  [{conf['bins'][n]:.2f}, {conf['bins'][n + 1]:.2f}) {tab} {deviation:5.2f} %")
-            print()
-
-        for n, [ck_var, ck_var_rebin] in enumerate(cf_var):
-            syst[n][0].AddVar(ck_var)
-            if conf['rebin']:
-                for i in range(len_rebin):
-                    syst[n][1][i].AddVar(ck_var_rebin[i])
-        del ch_var
-
-    # generate th2 plots for systematics
-    for n in range(len(syst)):
-        syst[n][0].GenSyst()
-        if conf['rebin']:
-            for i in range(len_rebin):
-                syst[n][1][i].GenSyst()
-
-    syst_plots = []                                         # [[[cf, diff, syst, dev], [rebins]], [bin2...], ...]
-    for n in range(len(syst)):
-        syst_plots.append([syst[n][0].GetAll(), []])
-        if conf['rebin']:
-            for i in range(len_rebin):
-                syst_plots[n][1].append(syst[n][1][i].GetAll())
-
-    # generates the graphs with the systematic errors for the cf and the rebinned entries
-    tgraphs = []
-    for n, (hist, hist_rebin) in enumerate(cf_list):
-        tgraphs.append([ROOT.TGraphErrors(), []])
-        for i in range(1, hist.GetNbinsX() + 1):
-            tgraphs[n][0].SetName("CF_syst_graph")
-            tgraphs[n][0].SetPoint(i - 1, hist.GetBinCenter(i), hist.GetBinContent(i))
-            tgraphs[n][0].SetPointError(i - 1, 0, syst_plots[n][0][2].GetBinContent(i))
-        if conf['rebin']:
-            for i in range(len_rebin):
-                tgraphs[n][1].append(ROOT.TGraphErrors())
-                for j in range(1, hist.GetNbinsX() + 1):
-                    tgraphs[n][1][i].SetName("CF_syst_graph")
-                    tgraphs[n][1][i].SetPoint(j - 1, hist_rebin[i].GetBinCenter(j), hist_rebin[i].GetBinContent(j))
-                    tgraphs[n][1][i].SetPointError(j - 1, 0, syst_plots[n][1][i][2].GetBinContent(j))
-
-    histos = (cf_list, syst_plots, tgraphs)
-    fds = FDS.FemtoDreamSaver(conf, histos)
-
-# systematics
-def UFFA_syst_3d(settings):
-    conf = config(settings)
-    fdr = FDR.FemtoDreamReader(conf['fullpath'], conf['fileTDir'])
-
-    # default cf
-    ch = cf_handler(fdr, conf)
-    histos = ch.get_cf_3d()                                # [[cf, [rebins]], [bin2...], ...], [[cf unw, [rebins]], [bin2...], ...]
-
-    # input same event for yield filtering
-    if conf['yield']:
-        se = fdr.get_se()
-        pair_num_se = se.Integral(se.FindBin(0), se.FindBin(conf['yield'][0]))
-    if conf['debug']:
-        se_all = ch.get_se_3d()
-
-    syst = []
-    syst_plots = []
-    cf_raw = []
-
-    if conf['rebin']:
-        len_rebin = len(conf['rebin'])
-
-    # create systematic object for all entries
-    for n, bin1 in enumerate(histos):
-        syst.append([])
-        for nn, [cf, cf_rebin] in enumerate(bin1):
-            syst[n].append([Systematics(cf), []])
-            if conf['rebin']:
-                for nnn in range(len_rebin):
-                    syst[n][nn][1].append(Systematics(cf_rebin[nnn]))
-
-    # loop over data variations in file and calculate the cf for each
-    # which is then saved in a th2 from which the systematic error is computed and saved in a th1
-    file_dir = fdr.get_dir()
-    fdr.cd(0)                               # class method of FileSaver to return to root of file
-    folders = fdr.get_folder_names()
-    folder_counter = -1
-    for folder in folders:
-        fdr.cd(folder)
-
-        # include/exclude specific variations
-        if conf['exclude'] and folder in conf['exclude']:
-            continue
-        elif conf['include']:
-            if folder in conf['include']:
-                pass
-            else:
-                continue
-        elif folder.rsplit('_')[-1][:3] != "Var":
-            continue
-
-        ch_var = cf_handler(fdr, conf)
-        histos_var = ch_var.get_cf_3d()
-
-        if conf['debug']:
-            print("Variation: \"" + folder + "\"")
-        # compare integrated yields in given range
-        if conf['yield']:
-            se_var = fdr.get_se()
-            pair_num_var = se_var.Integral(se_var.FindBin(0), se_var.FindBin(conf['yield'][0]))
-            deviation = abs(pair_num_se - pair_num_var) / pair_num_se
-            if deviation > conf['yield'][1]:
-                if conf['debug']:
-                    dev = deviation * 100
-                    print("Integrated yield k*: [0, " + str(conf['yield'][0]) + ") differs by " + f"{dev:.1f} %")
-                    if deviation > conf['yield'][1]:
-                        print("Variation: Excluded!\n")
-                        continue
-        if conf['debug']:
-            se_var_all = ch_var.get_se_3d()
-            tab = '\t'
-            for n, bin1 in enumerate(se_var_all):
-                print(f"Differential yield {conf['diff3d']:s}: [{conf['bins3d'][n]:.2f}, {conf['bins3d'][n + 1]:.2f})")
-                for nn, bin2 in enumerate(bin1):
-                    yield_all = se_all[n][nn][0].Integral()
-                    yield_all_var = se_var_all[n][nn][0].Integral()
-                    deviation = (abs(yield_all - yield_all_var) / yield_all) * 100
-                    print(f"{tab}{conf['diff3d2']:s}:  [{conf['bins'][nn]:.2f}, {conf['bins'][nn + 1]:.2f}) {tab} {deviation:5.2f} %")
-                print()
-            if conf['interactive']:
-                option = input("Include [Y/n] ")
-                if option and option.lower()[0] == 'n':
-                    print("\"" + folder + "\" excluded!\n")
-                    continue
-        folder_counter += 1
-
-        cf_raw.append([])   # add entry for folder
-        # add rebinned variations
-        for n, bin1 in enumerate(histos_var):
-            cf_raw[folder_counter].append([])
-            for nn, [cf, cf_rebin] in enumerate(bin1):
-                cf_raw[folder_counter][n].append([cf.Clone("CF_" + folder.rsplit('_')[-1]), []])
-                syst[n][nn][0].AddVar(cf)
-                if conf['rebin']:
-                    for nnn in range(len_rebin):
-                        cf_raw[folder_counter][n][nn][1].append(cf_rebin[nnn].Clone("CF_" + folder.rsplit('_')[-1]))
-                        syst[n][nn][1][nnn].AddVar(cf_rebin[nnn])
-        del ch_var
-
-    # generate th2 plots for systematics
-    for n, bin1 in enumerate(syst):
-        syst_plots.append([])
-        for nn, bin2 in enumerate(bin1):
-            syst[n][nn][0].GenSyst()
-            syst_plots[n].append([syst[n][nn][0].GetAll(), []])
-            if conf['rebin']:
-                for nnn in range(len_rebin):
-                    syst[n][nn][1][nnn].GenSyst()
-                    syst_plots[n][nn][1].append(syst[n][nn][1][nnn].GetAll())
-
-    # generates the graphs with the systematic errors for the cf and the rebinned entries
-    tgraphs = []
-    for n, bin1 in enumerate(histos):
-        tgraphs.append([])
-        for nn, [hist, hist_rebin] in enumerate(bin1):
-            tgraphs[n].append([ROOT.TGraphErrors(), []])
-            for nnn in range(1, hist.GetNbinsX() + 1):
-                tgraphs[n][nn][0].SetName("CF syst graph")
-                tgraphs[n][nn][0].SetPoint(nnn - 1, hist.GetBinCenter(nnn), hist.GetBinContent(nnn))
-                tgraphs[n][nn][0].SetPointError(nnn - 1, 0, syst_plots[n][nn][0][2].GetBinContent(nnn))
-            if conf['rebin']:
-                for nnn in range(len_rebin):
-                    tgraphs[n][nn][1].append(ROOT.TGraphErrors())
-                    for nnnn in range(1, hist.GetNbinsX() + 1):
-                        tgraphs[n][nn][1][nnn].SetName("CF syst graph")
-                        tgraphs[n][nn][1][nnn].SetPoint(nnnn - 1, hist_rebin[nnn].GetBinCenter(nnnn), hist_rebin[nnn].GetBinContent(nnnn))
-                        tgraphs[n][nn][1][nnn].SetPointError(nnnn - 1, 0, syst_plots[n][nn][1][nnn][2].GetBinContent(nnnn))
-
-    all_histos = (histos, syst_plots, tgraphs, cf_raw)
-    fds = FDS.FemtoDreamSaver(conf, all_histos)
-
-
-class Systematics():
-    """
-    class that returns the systematics of a CF
-    ---
-    - add variations with AddVar(var) before calling GenSyst()
-    - GetAll() : returns [th2 cf, th2 difference, th1 systematics, th1 std dev]
-    """
-    counter = 0 #TODO: das nicht hardcoden sondern auch ins config? außerdem nichts außerhalb von methoden haben? 
-    ybins = 1200
-    def __init__(self, cf):
-        self._cf = cf
-        self._xaxis = cf.GetXaxis()
-        self._xbins = cf.GetNbinsX()
-
-        self._var = ROOT.TH2D("CF_th2", "CF_th2", self._xbins, self._xaxis.GetXmin(), self._xaxis.GetXmax(), Systematics.ybins, 0, 10)
-        self._dif = ROOT.TH2D("diff_th2", "diff_th2", self._xbins, self._xaxis.GetXmin(), self._xaxis.GetXmax(), Systematics.ybins, -5, 5)
-        self._sys = ROOT.TH1D("syst_th1", "syst_th1", self._xbins, self._xaxis.GetXmin(), self._xaxis.GetXmax())
-        self._dev = ROOT.TH1D("dev_th1", "dev_th1", self._xbins, self._xaxis.GetXmin(), self._xaxis.GetXmax())
-        Systematics.counter = Systematics.counter + 1
-
-    def AddVar(self, cf_var):
-        for i in range(1, self._xbins + 1):
-            if self._cf.GetBinCenter(i) > 3:    # break over 3GeV
-                break
-            self._var.Fill(cf_var.GetBinCenter(i), cf_var.GetBinContent(i))     # fill th2 cf histo with variation
-
-    def GenSyst(self):
-        for i in range(1, self._xbins + 1):
-            if self._cf.GetBinCenter(i) > 3:    # break over 3GeV
-                break
-            cf_proj = self._var.ProjectionY("cf_xbin" + str(i), i, i)
-            dev = cf_proj.GetStdDev()
-            self._dev.SetBinContent(i, dev)
-            cont_def = self._cf.GetBinContent(i)
-            var_min = cf_proj.GetBinCenter(cf_proj.FindFirstBinAbove(0))
-            var_max = cf_proj.GetBinCenter(cf_proj.FindLastBinAbove(0))
-            self._dif.SetBinContent(i, self._dif.GetYaxis().FindBin(var_min), 1)
-            self._dif.SetBinContent(i, self._dif.GetYaxis().FindBin(var_max), 1)
-            dif_proj = self._dif.ProjectionY("diff_xbin" + str(i), i, i)
-            proj_min = dif_proj.GetBinCenter(dif_proj.FindFirstBinAbove(0))     # minimum value of difference
-            proj_max = dif_proj.GetBinCenter(dif_proj.FindLastBinAbove(0))      # maximum value of difference
-            self._sys.SetBinContent(i, (proj_max - proj_min) / (12**0.5))       # assume a square distribution
-        self._var.SetDirectory(0)
-        self._dif.SetDirectory(0)
-        self._sys.SetDirectory(0)
-        self._dev.SetDirectory(0)
-
-    def SetBinning(self, n):
-        Systematics.ybins = n
-
-    def GetVar(self):
-        return self._var
-
-    def GetDiff(self):
-        return self._dif
-
-    def GetSyst(self):
-        return self._sys
-
-    def GetDev(self):
-        return self._dev
-
-    def GetAll(self):
-        return [self._var, self._dif, self._sys, self._dev]
 
 # class that handles the retrieving of histos and computing of correlation functions
 class cf_handler():
     def __init__(self, FileReader, conf):
         self._file  = FileReader
         self._pair  = conf['pair']
-        self._atype = conf['atype']             # analysis type
-        self._htype = conf['htype']             # histo type
+        self._atype = None                         # analysis type
+        # self._htype = conf['htype']             # histo type
         self._mc    = conf['mc']                # bool monte carlo data
         self._bins  = conf['bins']              # bin range for differential
-        self._diff3d = conf['diff3d']           # which axis to split first in a 3D analysis
-        self._bins3d = conf['bins3d']   # bin range for the first differential split in case of a 3D analysis
-        self._rebin = conf['rebin']             # rebin factors for all se, me, cf plots
+        # self._diff3d = conf['diff3d']           # which axis to split first in a 3D analysis
+        # self._bins3d = conf['bins3d']   # bin range for the first differential split in case of a 3D analysis
+        self._rebin_factors = conf['rebin_factors']             # rebin factors for all se, me, cf plots
         self._norm  = conf['normalize']         # normalization range
         self._perc  = conf['percentile']        # percentile range
         self._rew_range = conf['rewrange']      # reweighting range
         self._name_se = conf['SE_path']
         self._name_me = conf['ME_path']
+
+        self._dimension = conf["dimension"]
+        self._kstar_axis = conf["kstar_axis"]
+        self._reweight_axis = conf["rew_axis"]
+        self._reweighting_bins = conf["rew_bins"]
+        self._rew_range = conf['rew_range']  
+        self._projection_axis = conf["projection_axes"]
         
         self._se = None
         self._me = None
@@ -441,83 +46,79 @@ class cf_handler():
         if self._name_se and self._name_me:
             self._se = self._file.get_histo(self._name_se)
             self._me = self._file.get_histo(self._name_me)
-        elif self._htype == 'k':        # TH1 kstar
-            self._se, self._me = self._file.get_kstar()
-            if self._mc:
-                self._se_mc, self._me_mc = self._file.get_kstar_mc()
-        elif self._htype == 'mult':      # TH2 k-mult
-            self._se, self._me = self._file.get_kmult()
-            if self._mc:
-                self._se_mc, self._me_mc = self._file.get_kmult_mc()
-        elif self._htype == 'mult3d':      # TH3 k-mult
-            se, me = self._file.get_kmtmult()
-            self._se = se.Project3D("zx").Clone()
-            self._me = me.Project3D("zx").Clone()
-            if self._mc:
-                self._se_mc, self._me_mc = self._file.get_kmult_mc()
-        elif self._htype == 'mt':      # TH2 k-mt
-            self._se, self._me = self._file.get_kmt()
-            if self._mc:
-                self._se_mc, self._me_mc = self._file.get_kmt_mc()
-        elif self._htype == 'mt3d':
-            se, me = self._file.get_kmtmult()
-            self._se = se.Project3D("yx").Clone()
-            self._me = me.Project3D("yx").Clone()
-            if self._mc:
-                self._se_mc, self._me_mc = self._file.get_kmt_mc()
-        elif self._htype in ['mtmult', 'rew3d']:
-            self._se, self._me = self._file.get_kmtmult()
-            if self._mc:
-                self._se_mc, self._me_mc = self._file.get_kmtmult_mc()
-        elif self._htype in ['4d', 'rew4d']:
-            self._se, self._me = self._file.get_4d()
-
-        # if self._name_se and not self._name_me:
-        #     self._se = self._file.get_histo(self._name_se)
-        # if self._name_me and not self._name_se:
-        #     self._me = self._file.get_histo(self._name_me)
+        else:
+            print("No paths to SE and ME histograms were provided in config. Exiting...")
+            exit()
 
         if self._mc:
             self._tracks_mc = self._file.get_tracks_mc()
+
         if self._pair == 'pp':
             self._event = self._file.get_event()
             self._tracks = self._file.get_tracks()
         elif self._pair == 'pl':
             self._v0 = self._file.get_v0()
 
-    # computes the cf for integrated or differential analysis and for mc data
-    # and returns the histos for all the different options
-    # [histos, histos_unw, histos_mc, histos_unw_mc, self._event, self._tracks, self._tracks_mc]
+    #TODO
     def get_histos(self):
+        """
+        computes the cf for integrated or differential analysis and for mc data
+        and returns the histos for all the different options:
+        [histos, histos_unw, histos_mc, histos_unw_mc, self._event, self._tracks, self._tracks_mc]
+        """
         histos = []
         histos_mc = []
         histos_unw = []
         histos_unw_mc = []
 
-        if self._atype == 'int':        # integrated analysis
-            histos, histos_unw = getIntegrated(self._se, self._me, self._htype, self._rebin, self._norm, self._rew_range)
+        if self._dimension == 1:  # integrated analysis (1D)
+            self._atype = "int"
+            histos, histos_unw = AnalysisUtils.getIntegrated(self._se, self._me, self._htype, self._rebin_factors, self._norm, self._rew_range)
             if self._mc:
-                histos_mc, histos_unw_mc = getIntegrated(self._se_mc, self._me_mc, self._htype, self._rebin, self._norm, self._rew_range)
-        elif self._atype == 'dif':      # differential analysis
-            if self._htype == 'mtmult': # 3D differantial analysis
-                histos = getDifferential3D(self._se, self._me, self._diff3d, self._bins3d, self._bins, self._rebin, self._norm)
-            elif self._htype == 'rew3d':
-                histos, histos_unw = getDiffReweight3D(self._se, self._me, self._bins3d, self._bins, self._rebin, self._norm, self._rew_range)
-            elif self._htype in ['4d', 'rew4d']:
-                se3d, me3d = getProj4d(self._se, self._me, self._perc)
-                if self._htype == '4d':
-                    histos = getDifferential3D(se3d, me3d, self._diff3d, self._bins3d, self._bins, self._rebin, self._norm)
-                else:
-                    histos, histos_unw = getDiffReweight3D(se3d, me3d, self._bins3d, self._bins, self._rebin, self._norm, self._rew_range)
+                histos_mc, histos_unw_mc = AnalysisUtils.getIntegrated(self._se_mc, self._me_mc, self._htype, self._rebin_factors, self._norm, self._rew_range)
+        elif self._dimension >= 2:  # differential analysis
+            self._atype = "dif"  
+            if self._dimension == 3: 
+                se2d, me2d = self.Project3Dto2D()
+            elif self._dimension >= 4: 
+                se2d, me2d = self.ProjectNDto2D()
+            elif self._dimension == 2:
+                se2d, me2d = self._se, self._me
             else:
-                histos = getDifferential(self._se, self._me, self._htype, self._bins, self._rebin, self._norm)
-                if self._mc:
-                    histos_mc = getDifferential(self._se_mc, self._me_mc, self._htype, self._bins, self._rebin, self._norm)
+                print("Invalid input histogram dimension selected, expecting integer. Exiting...")
+                exit()
+            
+            if self._reweight:
+                rew_histos = self.Reweight2D(se2d, me2d,)
+                self.GetDifferential(rew_histos)
+            else:
+                self.GetDifferential(se2d, me2d)
+            # get differntial
+            
+
+
+            #     histos, histos_unw = getDiffReweight3D(self._se, self._me, self._bins3d, self._bins, self._rebin_factors, self._norm, self._rew_range)
+            # else:
+            #     histos = getDifferential3D(self._se, self._me, self._diff3d, self._bins3d, self._bins, self._rebin_factors, self._norm)
+            # #4D analysis
+            
+            #     # se3d, me3d = getProj4d(self._se, self._me, self._perc, self._projection_axis)
+            #     se2d, me2d = self.ProjectNDto2D()
+            #     if self._reweight:
+            #         histos, histos_unw = getDiffReweight3D(se3d, me3d, self._bins3d, self._bins, self._rebin_factors, self._norm, self._rew_range)
+            #     else:
+            #         histos = getDifferential3D(se3d, me3d, self._diff3d, self._bins3d, self._bins, self._rebin_factors, self._norm)
+            # # 2D
+            # else:
+            #     histos = getDifferential(self._se, self._me, self._htype, self._bins, self._rebin_factors, self._norm)
+            #     if self._mc:
+            #         histos_mc = getDifferential(self._se_mc, self._me_mc, self._htype, self._bins, self._rebin_factors, self._norm)
 
         return [histos, histos_unw, histos_mc, histos_unw_mc, self._event, self._tracks, self._tracks_mc, self._v0]
 
     # returns a list of cf and their rebinned version
     # [[cf, [rebin 1, rebin 2, ...]], [bin2...], ...] same for unweighted if integrated analysis
+    #TODO
     def get_cf(self):
         histos = []
         histos_unw = []
@@ -526,18 +127,18 @@ class cf_handler():
 
         # integrated analysis
         if self._atype == 'int':
-            histos, histos_unw = getIntegrated(self._se, self._me, self._htype, self._rebin, self._norm)
+            histos, histos_unw = AnalysisUtils.getIntegrated(self._se, self._me, self._htype, self._rebin_factors, self._norm)
             if self._htype == 'mult':
                 cf_list_unw.append(histos_unw[1])
                 cf_list_unw.append([])
         # differential analysis
         elif self._atype == 'dif':
-            histos = getDifferential(self._se, self._me, self._htype, self._bins, self._rebin, self._norm)
+            histos = AnalysisUtils.GetDifferential(self._se, self._me, self._htype, self._bins, self._rebin_factors, self._norm)
         cf_list.append([histos[1][2], []])                          # cf, for differential 1st bin
 
         # rebinned entries appended to the empty list for the first bin
-        if self._rebin:
-            for n in range(len(self._rebin)):
+        if self._rebin_factors:
+            for n in range(len(self._rebin_factors)):
                 cf_list[0][1].append(histos[1][3][n][2])            # rebinned cf
                 if self._atype == 'int' and self._htype == 'mult':
                     cf_list_unw[1].append(histos_unw[2][n][1])      # rebinned unw cf for integrated
@@ -546,52 +147,54 @@ class cf_handler():
         if self._atype == 'dif':
             for n in range(2, len(self._bins)):
                 cf_list.append([histos[n][2], []])
-                if self._rebin:
-                    for nn in range(len(self._rebin)):
+                if self._rebin_factors:
+                    for nn in range(len(self._rebin_factors)):
                         cf_list[n][1].append(histos[n][3][nn][2])    # rebinned cf appended to rebin list
         return [cf_list, cf_list_unw]
 
     # returns a list of se and their rebinned version
+    #TODO
     def get_se(self):
         histos = []
         se_list = []
 
         # integrated analysis
         if self._atype == 'int':
-            histos, histos_unw = getIntegrated(self._se, self._me, self._htype, self._rebin, self._norm)
+            histos, histos_unw = AnalysisUtils.getIntegrated(self._se, self._me, self._htype, self._rebin_factors, self._norm)
         # differential analysis
         elif self._atype == 'dif':
-            histos = getDifferential(self._se, self._me, self._htype, self._bins, self._rebin, self._norm)
+            histos = AnalysisUtils.GetDifferential(self._se, self._me, self._htype, self._bins, self._rebin_factors, self._norm)
         se_list.append([histos[1][0], []])                          # se for differential 1st bin
 
         # rebinned entries appended to the empty list for the first bin
-        if self._rebin:
-            for n in range(len(self._rebin)):
+        if self._rebin_factors:
+            for n in range(len(self._rebin_factors)):
                 se_list[0][1].append(histos[1][3][n][0])            # rebinned se
 
         # repeat for the rest of the bins in case of differential analysis
         if self._atype == 'dif':
             for n in range(1, len(self._bins) - 1):
                 se_list.append([histos[n][0], []])
-                if self._rebin:
-                    for nn in range(len(self._rebin)):
+                if self._rebin_factors:
+                    for nn in range(len(self._rebin_factors)):
                         se_list[n][1].append(histos[n][3][nn][0])    # rebinned se appended to rebin list
         return se_list
 
     # returns all the cf's for a 3D mt/mult histo
     # [[[bin1-1 cf, [rebin cf]], [bin1-2 cf, [rebin cf]], ...], [[bin2-1 cf, [rebin cf]], [bin2-2 cf, [rebin cf]], ...], ...]
+    # not used for cf
     def get_cf_3d(self):
         cf_list = []
 
         se = self._se
         me = self._me
         if self._htype in ['4d', 'rew4d']:
-            se, me = getProj4d(self._se, self._me, self._perc)
+            se, me = AnalysisUtils.getProj4d(self._se, self._me, self._perc)
 
         if self._htype in ['rew3d', 'rew4d']:
-            histos, histos_unw = getDiffReweight3D(se, me, self._bins3d, self._bins, self._rebin, self._norm, self._rew_range)
+            histos, histos_unw = AnalysisUtils.getDiffReweight3D(se, me, self._bins3d, self._bins, self._rebin_factors, self._norm, self._rew_range)
         else:
-            histos = getDifferential3D(se, me, self._diff3d, self._bins3d, self._bins, self._rebin, self._norm)
+            histos = AnalysisUtils.getDifferential3D(se, me, self._diff3d, self._bins3d, self._bins, self._rebin_factors, self._norm)
 
         histos = histos[1:]     # remove TH3 histos
         for n, bin1 in enumerate(histos):
@@ -599,25 +202,26 @@ class cf_handler():
             bin1 = bin1[1:]     # remove TH2 histos
             for nn, th1 in enumerate(bin1):
                 cf_list[n].append([th1[2], []])
-                if self._rebin:
-                    for nnn in range(len(self._rebin)):
+                if self._rebin_factors:
+                    for nnn in range(len(self._rebin_factors)):
                         cf_list[n][nn][1].append(th1[3][nnn][2])
 
         return cf_list
 
     # returns all the cf's for a 3D mt/mult histo
+    #is not used for cf
     def get_se_3d(self):
         se_list = []
 
         se = self._se
         me = self._me
         if self._htype in ['4d', 'rew4d']:
-            se, me = getProj4d(self._se, self._me, self._perc)
+            se, me = AnalysisUtils.getProj4d(self._se, self._me, self._perc)
 
         if self._htype in ['rew3d', 'rew4d']:
-            histos, histos_unw = getDiffReweight3D(se, me, self._bins3d, self.bins, self._rebin, self._nrm, self._rew_range)
+            histos, histos_unw = AnalysisUtils.getDiffReweight3D(se, me, self._bins3d, self.bins, self._rebin_factors, self._nrm, self._rew_range)
         else:
-            histos = getDifferential3D(se, me, self._diff3d, self._bins3d, self._bins, self._rebin, self._norm)
+            histos = AnalysisUtils.getDifferential3D(se, me, self._diff3d, self._bins3d, self._bins, self._rebin_factors, self._norm)
 
         histos = histos[1:]     # remove TH3 histos
         for n, bin1 in enumerate(histos):
@@ -625,665 +229,636 @@ class cf_handler():
             bin1 = bin1[1:]     # remove TH2 histos
             for nn, th1 in enumerate(bin1):
                 se_list[n].append([th1[0], []])
-                if self._rebin:
-                    for nnn in range(len(self._rebin)):
+                if self._rebin_factors:
+                    for nnn in range(len(self._rebin_factors)):
                         se_list[n][nn][1].append(th1[3][nnn][0])
 
         return se_list
+    
+    def GetDifferential(self, rew_histos, title = None):
+        """
+        for 2d histogram
+        returns [[iSE, iME], [se, me, cf]] for a list of mt or mult ranges
+        [[iSE, iME], [se, me, cf, [rebin: [...], [...], ...], [bin 2 [rebin]], ...]
+        """
+        histos = []
+        conf = "" if not title else title + " "         # append to given name
+        norm = self._normalization_range
+        #htype should be mult or mt
+        # assert self._reweight_axis != None, "getDifferential: no differential axis input!"
 
-# splits th2 in section based on provided bins
-def getBinRangeHistos(iSE, iME, bins):
-    """
-    This function splits 2D histograms in the ranges
-    defined in the option 'bins'.
+        # bins=self._reweight_bins
 
-    The output is a list of ["range", SE, ME] for each bin:
-        [[name, SE, ME], [bin2], ...]
-    where the name is a string containing the limits.
-    """
-    xAxis = iSE.GetXaxis()
-    yAxis = iSE.GetYaxis()
+        # # axis for reweighting is set to y axis automatically when projecting down from higher dimensions
+        # if self._dimension >= 3:
+        #     axis = se2d.GetYaxis()
+        # elif self._dimension == 2:
+        #     if self._reweight_axis == 0:
+        #         axis = se2d.GetXaxis()
+        #     elif self._reweight_axis == 1:
+        #         axis = se2d.GetYaxis()
+        #     else:
+        #         print("Invalid reweighting axid index selected. Cannot be higher than 1 for a 2D histogram. Exiting...")
+        #         exit()
 
-    if type(bins) == list:
-        limits = []
-        for value_diff in bins:
-            value_bin = yAxis.FindBin(float(value_diff))
-            limits.append(value_bin)
-    else:
-        print("Error in getBinRangeHistos: bin input \"" + str(bins) + "\" not a list of ranges!")
-        exit()
+        # htype = axis.GetTitle()
+        # conf += "htype"+": "
+        # histos.append([se2d.Clone(f"SE k{htype}"), me2d.Clone(f"ME k{htype}")]) 
 
+        # print(htype)
+        # print(bins)
 
-    histos = []
-    for n in range(1, len(bins)):
-        diff_low = bins[n - 1]
-        diff_up  = bins[n]
+        # divide in bins
+        # mt_histos = self.Get2DHistosFromBins(se2d, me2d, htype)
 
-        bin_low = xAxis.FindBin(diff_low)
-        bin_up  = xAxis.FindBin(diff_up)
+        for n, [name, se, me] in enumerate(rew_histos, 1):
+            histos.append(AnalysisUtils.getCorrelation(se, me, name, conf + name, norm))
+            histos[n].append([])
+            if self._rebin_factors:       # append a list of rebinned [se, me, cf] in the original [se, me, cf, []]
+                for factor in self._rebin_factors:
+                    se_rebin = AnalysisUtils.rebin_hist(se, factor)
+                    me_rebin = AnalysisUtils.rebin_hist(me, factor)
+                    rebin_conf = " rebin: " + str(factor)
+                    histos[n][3].append(AnalysisUtils.getCorrelation(se_rebin, me_rebin, name, conf + name + rebin_conf, norm))
+        return histos
+    
+    #move to analysis class
+    def Get2DHistosFromBins(self, se, me, label):
+        """
+        this function divides a 2D histogram into the reweighting bins
+        returns list of [name, se, me] tuples for each bin
+        """
+        bins = self._reweight_bins
 
-        if diff_up == xAxis.GetBinLowEdge(bin_up):
+        if self._dimension >= 3:
+            axis = se.GetYaxis()
+        elif self._dimension == 2:
+            if self._reweight_axis == 0:
+                axis = se.GetXaxis()
+            elif self._reweight_axis == 1:
+                axis = se.GetYaxis()
+            else:
+                print("Invalid reweighting axid index selected. Cannot be higher than 1 for a 2D histogram. Exiting...")
+                exit()
+
+        if type(bins) == list:
+            limits = []
+            for value_diff in bins:
+                value_bin = axis.FindBin(float(value_diff))
+                limits.append(value_bin)
+        else:
+            print("Get2DHistosFromBins: bin input \"" + str(bins) + "\" not a list of ranges!")
+            exit()
+
+        histos = []
+        #loop through the reweight bins
+        for n in range(1, len(limits)):
+
+            diff_low = bins[n - 1]
+            diff_up  = bins[n]
+            print(diff_low, diff_up)
+
+            bin_low = axis.FindBin(diff_low)
+            bin_up  = axis.FindBin(diff_up)
+            print(bin_low, bin_up)
+            print("bin_up low edge:", axis.GetBinLowEdge(bin_up))
+            print("bin_up - 1 =", bin_up - 1)
+            print("bin_up upper edge:", axis.GetBinLowEdge(bin_up))
+
+            if diff_up == axis.GetBinLowEdge(bin_up):
+                bin_up -= 1
+
+            name = label + ": [%.2f-%.2f)" % (bins[n-1], bins[n])
+            axis.SetRange(bin_low, bin_up)
+            axis.SetRange(bin_low, bin_up)
+            histos.append([name, se.Clone(name), me.Clone(name)])
+
+        return histos
+    
+    #move to analysis class
+    def ProjectNDto2D(self):
+        # clone SE,ME distribution
+        seND = self._se.Clone("Ndim_se")
+        meND = self._se.Clone("Ndim_me")
+
+        for proj_axis in self._projection_axes:
+            axis_index = proj_axis[0]
+            proj_range = proj_axis[1]
+
+            axis = seND.GetAxis(axis_index)
+
+            # set the projection range
+            perc_low = proj_range[0]
+            perc_up  = proj_range[1]
+
+            # get bins
+            bin_low = axis.FindBin(perc_low)
+            bin_up  = axis.FindBin(perc_up)
+
+            # lower the upper bin number if it is right on the next bin's lower edge
+            if perc_up == axis.GetBinLowEdge(bin_up):
+                bin_up -= 1
+
+            # adjust the axis ranges
+            seND.GetAxis(axis_index).SetRange(bin_low, bin_up)
+            meND.GetAxis(axis_index).SetRange(bin_low, bin_up)
+
+        se = seND.Projection(self._kstar_axis, self._reweight_axis)
+        me = meND.Projection(self._kstar_axis, self._reweight_axis)
+
+        return [se, me]
+    
+    #move to analysis class
+    def Project3Dto2D(self):
+        """
+        this function projects a 3D histogram to a 2D histogram.
+        The output 2D histogram will have k-star as its XAxis!
+        Use this when reweighting is True 
+        """
+        # clone SE,ME distribution
+        se3D = self._se.Clone("3dim_se")
+        me3D = self._se.Clone("3dim_me")
+
+        assert len(self._projection_axis) == 1, "Project2Dto3D: Too many projection axes specified for a 3D histogram!"
+        
+        axis_index = self._projection_axis[0]
+        proj_range = self._projection_axis[1]
+
+        assert axis_index != self._kstar_axis, "Project3Dto2D: Cannot project axis with same index as k* axis!"
+
+        if axis_index == 0:
+            se_axis = se3D.GetXaxis()
+            me_axis = me3D.GetXaxis()
+            if self._kstar_axis == 1:
+                proj_option = "zy"
+            elif self._kstar_axis == 2:
+                proj_option = "yz"
+            else:
+                print("Project2Dto3D: Invalid k* axis selected. Exiting...")
+                exit()
+        elif axis_index == 1:
+            se_axis = se3D.GetYaxis()
+            me_axis = me3D.GetYaxis()
+            if self._kstar_axis == 0:
+                proj_option = "zx"
+            elif self._kstar_axis == 2:
+                proj_option = "xz"
+            else:
+                print("Project2Dto3D: Invalid k* axis selected. Exiting...")
+                exit()
+        elif axis_index == 2:
+            se_axis = se3D.GetZaxis()
+            me_axis = me3D.GetZaxis()
+            if self._kstar_axis == 0:
+                proj_option = "yx"
+            elif self._kstar_axis == 1:
+                proj_option = "xy"
+            else:
+                print("Project2Dto3D: Invalid k* axis selected. Exiting...")
+                exit()
+        else:
+            print("Project2Dto3D: Axis index out of range for a 3D histogram. Exiting...")
+            exit()
+
+        # set the projection range
+        perc_low = proj_range[0]
+        perc_up  = proj_range[1]
+
+        # get bins
+        bin_low = se_axis.FindBin(perc_low)
+        bin_up  = se_axis.FindBin(perc_up)
+
+        # lower the upper bin number if it is right on the next bin's lower edge
+        if perc_up == se_axis.GetBinLowEdge(bin_up):
             bin_up -= 1
 
-        name = "[%.2f-%.2f)" % (bins[n - 1], bins[n])
-        se = iSE.ProjectionX("se_k", bin_low, bin_up)
-        me = iME.ProjectionX("me_k", bin_low, bin_up)
-        histos.append([name, se.Clone(), me.Clone()])
+        # adjust the axis ranges
+        se_axis.SetRange(bin_low, bin_up)
+        me_axis.SetRange(bin_low, bin_up)
 
-    return histos
+        se = se3D.Project3D(proj_option)
+        me = me3D.Project3D(proj_option)
 
-# splits th3 in section based on provided bins
-def getBinRangeHistos3D(iSE, iME, diff3d, bins3d):
-    """
-    This function takes as input 3D SE and ME plots
-    and splits them into 2D plots in mt/mult according to 'diff3d'
-    in the ranges defined in 'bins3d'.
+        return [se, me]
 
-    The output is a list of ["range", SE mt/mult vs k*, ME mt/mult vs k*] for each bin:
-        [[name, SE, ME], [bin2], ...]
-    where the name is a string containing the limits and SE, ME are 2D plots.
-    """
-    if diff3d == 'mt':
-        diffAxisSE = iSE.GetYaxis()
-        diffAxisME = iME.GetYaxis()
-        projOpt = "zx"
-    elif diff3d == 'mult':
-        diffAxisSE = iSE.GetZaxis()
-        diffAxisME = iME.GetZaxis()
-        projOpt = "yx"
-    else:
-        print("Error in getBinRangeHistos: diff3d axis not known. Please choose either 'mt' or 'mult'")
-        exit()
+    #move to analysis class
+    def Reweight2D(self, se2d, me2d):
+        """
+        this function reweights the 2D histogram in each reweighting bin. 
+        The output is a list [name, se, me_reweighted] for each bin.
+        """
+        label= se2d.GetYaxis().GetTitle() #TODO: check if this works!
+        rew_range = self._rew_range
+        histos = self.Get2DHistosFromBins(se2d, me2d, label)
+        out = []
 
-    if type(bins3d) == list:
-        limits = []
-        for value_diff in bins3d:
-            value_bin = diffAxisSE.FindBin(float(value_diff))
-            limits.append(value_bin)
-    else:
-        print("Error in getBinRangeHistos: bin input \"" + str(bins3d) + "\" not a list of ranges!")
-        exit()
+        for hist in histos:
+            name = hist[0]
+            se = hist[1]
+            me = hist[2]
+            out.append([name, se, AnalysisUtils.reweight(se, me, rew_range)[3].Clone(name)])        # append the reweighted th2 ME distribution
 
-    histos = []
-    for n in range(1, len(limits)):
+        return out
 
-        diff_low = bins3d[n - 1]
-        diff_up  = bins3d[n]
-        print(diff_low, diff_up)
 
-        bin_low = diffAxisSE.FindBin(diff_low)
-        bin_up  = diffAxisSE.FindBin(diff_up)
-        print(bin_low, bin_up)
-        print("bin_up low edge:", diffAxisSE.GetBinLowEdge(bin_up))
-        print("bin_up - 1 =", bin_up - 1)
-        print("bin_up upper edge:", diffAxisSE.GetBinLowEdge(bin_up))
+class AnalysisUtils():
+    # # splits th2 in section based on provided bins -> Get2DHistosFromBins
+    # def getBinRangeHistos(iSE, iME, bins, projection_axis):
+    #     """
+    #     This function splits 2D histograms in the ranges
+    #     defined in the option 'bins'.
 
-        if diff_up == diffAxisSE.GetBinLowEdge(bin_up):
-            bin_up -= 1
+    #     The output is a list of ["range", SE, ME] for each bin:
+    #         [[name, SE, ME], [bin2], ...]
+    #     where the name is a string containing the limits.
+    #     """
+    #     yAxis = iSE.GetAxis(projection_axis)
+    #     remaining_axis = 0 if projection_axis == 1 else 1
+    #     xAxis = iSE.GetAxis(remaining_axis)
 
-        name = diff3d + ": [%.2f-%.2f)" % (bins3d[n - 1], bins3d[n])
-        diffAxisSE.SetRange(bin_low, bin_up)
-        diffAxisME.SetRange(bin_low, bin_up)
-        se = iSE.Project3D("SE_"+projOpt+"_"+name)
-        me = iME.Project3D("ME_"+projOpt+"_"+name)
-        histos.append([name, se.Clone(), me.Clone()])
+    #     if type(bins) == list:
+    #         limits = []
+    #         for value_diff in bins:
+    #             value_bin = yAxis.FindBin(float(value_diff))
+    #             limits.append(value_bin)
+    #     else:
+    #         print("Error in getBinRangeHistos: bin input \"" + str(bins) + "\" not a list of ranges!")
+    #         exit()
 
-    return histos
 
-# helper function for the CF
-# output: [se, me, cf]
-def getCorrelation(se, me, name, conf, norm = None):
-    ch = CH.CorrelationHandler(name, se, me)
-    #ch.normalize()
-    ch.make_cf()
-    minmax = norm if norm else [0.24, 0.34]
-    ch.normalize_cf(minmax[0], minmax[1])
-    se = ch.get_se().Clone("SE")
-    me = ch.get_me().Clone("ME")
-    cf = ch.get_cf().Clone("CF")
-    se.SetTitle(conf)
-    me.SetTitle(conf)
-    cf.SetTitle(conf)
-    del ch
-    return [se, me, cf]
+    #     histos = []
+    #     for n in range(1, len(bins)):
+    #         diff_low = bins[n - 1]
+    #         diff_up  = bins[n]
 
-# returns [[iSE, iME], [se, me, cf]] for a list of mt or mult ranges
-# [[iSE, iME], [se, me, cf, [rebin: [...], [...], ...], [bin 2 [rebin]], ...]
-def getDifferential(iSE, iME, htype, bins, rebin, norm, title = None):
-    histos = []
-    conf = "" if not title else title + " "         # append to given name
-    if htype == 'mult':
-        conf += "mult: "
-        histos.append([iSE.Clone("SE kmult"), iME.Clone("ME kmult")])
-    elif htype == 'mt':
-        conf += "mt: "
-        histos.append([iSE.Clone("SE kmT"), iME.Clone("ME kmT")])
-    else:
-        print("getDifferential: no kmT or kmult input!")
-        exit()
+    #         bin_low = xAxis.FindBin(diff_low)
+    #         bin_up  = xAxis.FindBin(diff_up)
 
-    print(htype)
-    print(bins)
+    #         if diff_up == xAxis.GetBinLowEdge(bin_up):
+    #             bin_up -= 1
 
-    mt_histos = getBinRangeHistos(iSE, iME, bins)
-    for n, [name, se, me] in enumerate(mt_histos, 1):
-        histos.append(getCorrelation(se, me, name, conf + name, norm))
-        histos[n].append([])
-        if rebin:       # append a list of rebinned [se, me, cf] in the original [se, me, cf, []]
-            for factor in rebin:
-                se_rebin = rebin_hist(se, factor)
-                me_rebin = rebin_hist(me, factor)
-                rebin_conf = " rebin: " + str(factor)
-                histos[n][3].append(getCorrelation(se_rebin, me_rebin, name, conf + name + rebin_conf, norm))
-    return histos
+    #         name = "[%.2f-%.2f)" % (bins[n - 1], bins[n])
+    #         se = iSE.ProjectionX("se_k", bin_low, bin_up)
+    #         me = iME.ProjectionX("me_k", bin_low, bin_up)
+    #         histos.append([name, se.Clone(), me.Clone()])
 
-# [[iSE, iME], [[1st proj SE, 1st proj ME], [se, me, cf, [rebin], [bin 2 [rebin]]]], ...]
-def getDifferential3D(iSE, iME, diff3d, bins3d, bins, rebin, norm):
-    """
-    This function takes as input 3D mult-mt-k* plots
-    and splits them first in mt/mult according to 'diff3d' in the limits defined in 'bins3d'.
-    The 2D mt/mult-k* plots are then projected in k* in the limits defined in 'bins'.
+    #     return histos
 
-    The output is a list of the mt bins, each bin is then a list of the mult bins
-    which include the SE, ME, CF and the rebinned plots:
-        [ [ [SE, ME, CF, [rebinned SE, ME, CF]], [mult/mt bin2], ... ], [mt/mult bin2], ... ]
-    """
-    histos = []
-    histos.append([iSE.Clone("SE kmTmult"), iME.Clone("ME kmTmult")])
+    # # splits th3 in section based on provided bins -> Project2Dto3D and Get2DHistosFromBins
+    # def getBinRangeHistos3D(iSE, iME, diff3d, bins3d, mult_axis):
+    #     """
+    #     This function takes as input 3D SE and ME plots
+    #     and splits them into 2D plots in mt/mult according to 'diff3d'
+    #     in the ranges defined in 'bins3d'.
 
-    diff3d_histos = getBinRangeHistos3D(iSE, iME, diff3d, bins3d)
+    #     The output is a list of ["range", SE mt/mult vs k*, ME mt/mult vs k*] for each bin:
+    #         [[name, SE, ME], [bin2], ...]
+    #     where the name is a string containing the limits and SE, ME are 2D plots.
+    #     """
+    #     if diff3d == 'mt':#TODO
+    #         diffAxisSE = iSE.GetYaxis()
+    #         diffAxisME = iME.GetYaxis()
+    #         projOpt = "zx"
+    #     elif diff3d == 'mult':
+    #         if mult_axis == 1:
+    #             diffAxisSE = iSE.GetYaxis()
+    #             diffAxisME = iME.GetYaxis()
+    #             projOpt = "zx"
+    #         elif mult_axis == 2:
+    #             diffAxisSE = iSE.GetZaxis()
+    #             diffAxisME = iME.GetZaxis()
+    #             projOpt = "yx"
+    #         else:
+    #             print("no multiplicity axis specified.")
+    #     else:
+    #         print("Error in getBinRangeHistos: diff3d axis not known. Please choose either 'mt' or 'mult'")
+    #         exit()
 
-    htypeSplit2 = ""
-    if diff3d == 'mult':
-        htypeSplit2 = "mt"
-    elif diff3d == 'mt':
-        htypeSplit2 = "mult"
+    #     if type(bins3d) == list:
+    #         limits = []
+    #         for value_diff in bins3d:
+    #             value_bin = diffAxisSE.FindBin(float(value_diff))
+    #             limits.append(value_bin)
+    #     else:
+    #         print("Error in getBinRangeHistos: bin input \"" + str(bins3d) + "\" not a list of ranges!")
+    #         exit()
 
-    for title, se, me in diff3d_histos:
-        histos.append(getDifferential(se, me, htypeSplit2, bins, rebin, norm, title))
+    #     histos = []
+    #     for n in range(1, len(limits)):
 
-    return histos
+    #         diff_low = bins3d[n - 1]
+    #         diff_up  = bins3d[n]
+    #         print(diff_low, diff_up)
 
-# [[iSE, iME], [[1st proj SE, 1st proj ME], [se, me, cf, [rebin], [bin 2 [rebin]]]], ...]
-def getDiffReweight3D(iSE, iME, bins3d, bins, rebin, norm, rew_range):
-    """
-    This function takes as input 3D mult-mt-k* plots
-    and splits them first in mt according to the limits defined in 'bins3d'.
+    #         bin_low = diffAxisSE.FindBin(diff_low)
+    #         bin_up  = diffAxisSE.FindBin(diff_up)
+    #         print(bin_low, bin_up)
+    #         print("bin_up low edge:", diffAxisSE.GetBinLowEdge(bin_up))
+    #         print("bin_up - 1 =", bin_up - 1)
+    #         print("bin_up upper edge:", diffAxisSE.GetBinLowEdge(bin_up))
 
-    The 2D mult-k* plots are then reweighted in mult and splits according
-    to the limits defined in 'bins'.
+    #         if diff_up == diffAxisSE.GetBinLowEdge(bin_up):
+    #             bin_up -= 1
 
-    The output is a list of the mt bins, each bin is then a list of the mult bins
-    which include the SE, ME, CF and the rebinned plots:
-        [ [ [SE, ME, CF, [rebinned SE, ME, CF]], [mult bin2], ... ], [mt bin2], ... ]
-    """
-    histos = []
-    histos.append([iSE.Clone("SE kmTmult"), iME.Clone("ME kmTmult")])
+    #         name = diff3d + ": [%.2f-%.2f)" % (bins3d[n - 1], bins3d[n])
+    #         diffAxisSE.SetRange(bin_low, bin_up)
+    #         diffAxisME.SetRange(bin_low, bin_up)
+    #         se = iSE.Project3D("SE_"+projOpt+"_"+name)
+    #         me = iME.Project3D("ME_"+projOpt+"_"+name)
+    #         histos.append([name, se.Clone(), me.Clone()])
 
-    histos_unw = getDifferential3D(iSE, iME, "mt", bins3d, bins, rebin, norm)
+    #     return histos
 
-    histos_diff3d = reweight3D(iSE, iME, bins3d, rew_range)
+    #keep
+    def getCorrelation(se, me, name, conf, norm = None):
+        """
+        helper function for the correlation function
+        outputs tuple [SE, ME, CF]
+        """
+        ch = CH.CorrelationHandler(name, se, me)
 
-    for title, se, me in histos_diff3d:
-        histos.append(getDifferential(se, me, "mult", bins, rebin, norm, title))
+        ch.make_cf()
+        minmax = norm if norm else [0.24, 0.34]
+        
+        ch.normalize_cf(minmax[0], minmax[1])
+        se = ch.get_se().Clone("SE")
+        me = ch.get_me().Clone("ME")
+        cf = ch.get_cf().Clone("CF")
+        se.SetTitle(conf)
+        me.SetTitle(conf)
+        cf.SetTitle(conf)
+        del ch
+        return [se, me, cf]
 
-    return histos, histos_unw
+    #moved
+    def getDifferential(iSE, iME, htype, bins, rebin, norm, mult_axis, mt_axis, title = None):
+        """
+        for 2d histogram
+        returns [[iSE, iME], [se, me, cf]] for a list of mt or mult ranges
+        [[iSE, iME], [se, me, cf, [rebin: [...], [...], ...], [bin 2 [rebin]], ...]
+        """
+        histos = []
+        conf = "" if not title else title + " "         # append to given name
+    
+        #htype should be mult or mt
+        assert htype in ["mult", "mt"], "getDifferential: no kmT or kmult input!"
 
-# returns a list of [[iSE, iME], [se, me, cf]] for rel pair k* input
-# or reweights and returns ([[iSE, iME], [se, me, cf, [rebin]]], [me_unw, cf_unw, [rebin]]) for kmult
-# and [[iSE, iME], [se, me, cf, [rebin]]] for kmT
-def getIntegrated(iSE, iME, htype, rebin, norm, rew_range):
-    histos = []
-    histos_unw = []
-    if htype == 'k':      # k* input
-        histos.append([iSE.Clone("SE kstar"), iME.Clone("ME kstar")])
-        se = iSE
-        me = iME
-    elif htype == 'mult':    # kmult input
-        histos.append([iSE.Clone("SE kmult"), iME.Clone("ME kmult")])
-        hReweight = reweight(iSE, iME, rew_range)
-        se          = hReweight[0]
-        me          = hReweight[1]
-        me_unw      = hReweight[2]
-        se_mult     = hReweight[4]
-        me_mult     = hReweight[5]
-        me_mult_unw = hReweight[6]
-        histos[0].append(se_mult.Clone("SE mult"))
-        histos[0].append(me_mult.Clone("ME mult"))
-        histos[0].append(me_mult_unw.Clone("ME mult unw"))
-    elif htype == 'mt':    # kmT input
-        histos.append([iSE.Clone("SE kmT"), iME.Clone("ME kmT")])
-        hReweight = reweight(iSE, iME, rew_range)
-        se = hReweight[0]
-        me = hReweight[2]   # unweighted me, i.e. normal me projection of the kmT histo
+        conf += "htype"+": "
+        histos.append([iSE.Clone(f"SE k{htype}"), iME.Clone(f"ME k{htype}")]) 
 
-    histos.append(getCorrelation(se, me, "cf", "", norm))
-    if rebin:               # append rebinned histos to list of histos
-        histos_rebin = []
-        for factor in rebin:
-            se_rebin = rebin_hist(se, factor)
-            me_rebin = rebin_hist(me, factor)
-            rebin_conf = " rebin: " + str(factor)
-            histos_rebin.append(getCorrelation(se_rebin, me_rebin, "rebin: " + str(factor), rebin_conf, norm))
-        histos[1].append(histos_rebin)
-    if htype == 'mult':      # 2nd list with unweighted histos
-        se, me, cf = getCorrelation(se, me_unw, "cf_unw", "unweighted", norm)
-        histos_unw.append(me.Clone("ME unw"))
-        histos_unw.append(cf.Clone("CF unw"))
-        histos_unw.append([])
-        if rebin:           # append rebinned histos to list of histos
+        print(htype)
+        print(bins)
+
+        # divide in bins
+        projection_axis = mult_axis if htype == "mult" else mt_axis
+        mt_histos = AnalysisUtils.getBinRangeHistos(iSE, iME, bins, projection_axis)
+
+        for n, [name, se, me] in enumerate(mt_histos, 1):
+            histos.append(AnalysisUtils.getCorrelation(se, me, name, conf + name, norm))
+            histos[n].append([])
+            if rebin:       # append a list of rebinned [se, me, cf] in the original [se, me, cf, []]
+                for factor in rebin:
+                    se_rebin = AnalysisUtils.rebin_hist(se, factor)
+                    me_rebin = AnalysisUtils.rebin_hist(me, factor)
+                    rebin_conf = " rebin: " + str(factor)
+                    histos[n][3].append(AnalysisUtils.getCorrelation(se_rebin, me_rebin, name, conf + name + rebin_conf, norm))
+        return histos
+
+    # # [[iSE, iME], [[1st proj SE, 1st proj ME], [se, me, cf, [rebin], [bin 2 [rebin]]]], ...]
+    # def getDifferential3D(iSE, iME, diff3d, bins3d, bins, rebin, norm, mult_axis):
+    #     """
+    #     This function takes as input 3D mult-mt-k* plots
+    #     and splits them first in mt/mult according to 'diff3d' in the limits defined in 'bins3d'.
+    #     The 2D mt/mult-k* plots are then projected in k* in the limits defined in 'bins'.
+
+    #     The output is a list of the mt bins, each bin is then a list of the mult bins
+    #     which include the SE, ME, CF and the rebinned plots:
+    #         [ [ [SE, ME, CF, [rebinned SE, ME, CF]], [mult/mt bin2], ... ], [mt/mult bin2], ... ]
+    #     """
+    #     histos = []
+    #     histos.append([iSE.Clone("SE kmTmult"), iME.Clone("ME kmTmult")])
+
+    #     diff3d_histos = AnalysisUtils.getBinRangeHistos3D(iSE, iME, diff3d, bins3d, mult_axis)
+
+    #     htypeSplit2 = ""
+    #     if diff3d == 'mult':
+    #         htypeSplit2 = "mt"
+    #     elif diff3d == 'mt':
+    #         htypeSplit2 = "mult"
+
+    #     for title, se, me in diff3d_histos:
+    #         histos.append(AnalysisUtils.getDifferential(se, me, htypeSplit2, bins, rebin, norm, title))
+
+    #     return histos
+
+    # # [[iSE, iME], [[1st proj SE, 1st proj ME], [se, me, cf, [rebin], [bin 2 [rebin]]]], ...]
+    # def getDiffReweight3D(iSE, iME, bins3d, bins, rebin, norm, rew_range):
+    #     """
+    #     This function takes as input 3D mult-mt-k* plots
+    #     and splits them first in mt according to the limits defined in 'bins3d'.
+
+    #     The 2D mult-k* plots are then reweighted in mult and splits according
+    #     to the limits defined in 'bins'.
+
+    #     The output is a list of the mt bins, each bin is then a list of the mult bins
+    #     which include the SE, ME, CF and the rebinned plots:
+    #         [ [ [SE, ME, CF, [rebinned SE, ME, CF]], [mult bin2], ... ], [mt bin2], ... ]
+    #     """
+    #     histos = []
+    #     histos.append([iSE.Clone("SE kmTmult"), iME.Clone("ME kmTmult")])
+
+    #     histos_unw = AnalysisUtils.getDifferential3D(iSE, iME, "mt", bins3d, bins, rebin, norm)
+
+    #     histos_diff3d = AnalysisUtils.reweight3D(iSE, iME, bins3d, rew_range)
+
+    #     for title, se, me in histos_diff3d:
+    #         histos.append(AnalysisUtils.getDifferential(se, me, "mult", bins, rebin, norm, title))
+
+    #     return histos, histos_unw
+
+    # returns a list of [[iSE, iME], [se, me, cf]] for rel pair k* input
+    # or reweights and returns ([[iSE, iME], [se, me, cf, [rebin]]], [me_unw, cf_unw, [rebin]]) for kmult
+    # and [[iSE, iME], [se, me, cf, [rebin]]] for kmT
+    def getIntegrated(iSE, iME, htype, rebin, norm, rew_range): #TODO
+        histos = []
+        histos_unw = []
+        if htype == 'k':      # k* input
+            histos.append([iSE.Clone("SE kstar"), iME.Clone("ME kstar")])
+            se = iSE
+            me = iME
+        elif htype == 'mult':    # kmult input
+            histos.append([iSE.Clone("SE kmult"), iME.Clone("ME kmult")])
+            hReweight = AnalysisUtils.reweight(iSE, iME, rew_range)
+            se          = hReweight[0]
+            me          = hReweight[1]
+            me_unw      = hReweight[2]
+            se_mult     = hReweight[4]
+            me_mult     = hReweight[5]
+            me_mult_unw = hReweight[6]
+            histos[0].append(se_mult.Clone("SE mult"))
+            histos[0].append(me_mult.Clone("ME mult"))
+            histos[0].append(me_mult_unw.Clone("ME mult unw"))
+        elif htype == 'mt':    # kmT input
+            histos.append([iSE.Clone("SE kmT"), iME.Clone("ME kmT")])
+            hReweight = AnalysisUtils.reweight(iSE, iME, rew_range)
+            se = hReweight[0]
+            me = hReweight[2]   # unweighted me, i.e. normal me projection of the kmT histo
+
+        histos.append(AnalysisUtils.getCorrelation(se, me, "cf", "", norm))
+        if rebin:               # append rebinned histos to list of histos
             histos_rebin = []
             for factor in rebin:
-                se_rebin = rebin_hist(se, factor)
-                me_rebin = rebin_hist(me, factor)
+                se_rebin = AnalysisUtils.rebin_hist(se, factor)
+                me_rebin = AnalysisUtils.rebin_hist(me, factor)
                 rebin_conf = " rebin: " + str(factor)
-                se_rebin, me_rebin, cf_rebin = getCorrelation(se_rebin, me_rebin, "rebin: " + str(factor), rebin_conf, norm)
-                histos_unw[2].append([me_rebin.Clone("ME unw"), cf_rebin.Clone("CF unw")])
+                histos_rebin.append(AnalysisUtils.getCorrelation(se_rebin, me_rebin, "rebin: " + str(factor), rebin_conf, norm))
+            histos[1].append(histos_rebin)
+        if htype == 'mult':      # 2nd list with unweighted histos
+            se, me, cf = AnalysisUtils.getCorrelation(se, me_unw, "cf_unw", "unweighted", norm)
+            histos_unw.append(me.Clone("ME unw"))
+            histos_unw.append(cf.Clone("CF unw"))
+            histos_unw.append([])
+            if rebin:           # append rebinned histos to list of histos
+                histos_rebin = []
+                for factor in rebin:
+                    se_rebin = AnalysisUtils.rebin_hist(se, factor)
+                    me_rebin = AnalysisUtils.rebin_hist(me, factor)
+                    rebin_conf = " rebin: " + str(factor)
+                    se_rebin, me_rebin, cf_rebin = AnalysisUtils.getCorrelation(se_rebin, me_rebin, "rebin: " + str(factor), rebin_conf, norm)
+                    histos_unw[2].append([me_rebin.Clone("ME unw"), cf_rebin.Clone("CF unw")])
 
-    return histos, histos_unw
+        return histos, histos_unw
 
-# projects and reweights se and me from kmult histos
-# returns [se, me, me unweighted, se mult, me mult, me mult unweighted]
-def reweight(iSE, iME, rew_range):
-    """
-    This function takes as input a 2D mt/mult vs k* SE and ME distribution
-    and reweights the ME distribution in each bin projection of mt/mult.
 
-    The output is a list that includes all plots that can be generated:
-        [0] SE 1D k*
-        [1] ME 1D k* reweighted
-        [2] ME 1D k* unweighted
-        [3] ME 2D mt/mult vs k* reweighted
-        [4] SE 1D mt/mult
-        [5] ME 1D mt/mult reweighted
-        [6] ME 1D mt/mult unweighted
-    """
+    # needed
+    def reweight(iSE, iME, rew_range):
+        """
+        This function takes as input a 2D mt/mult vs k* SE and ME distribution
+        and reweights the ME distribution in each bin projection of mt/mult.
 
-    me = iME.Clone("ME kmult reweighted")
-    me.Reset("ICESM")
-    me_axis = me.GetYaxis()
+        The output is a list that includes all plots that can be generated:
+            [0] SE 1D k*
+            [1] ME 1D k* reweighted
+            [2] ME 1D k* unweighted
+            [3] ME 2D mt/mult vs k* reweighted
+            [4] SE 1D mt/mult
+            [5] ME 1D mt/mult reweighted
+            [6] ME 1D mt/mult unweighted
+        """
 
-    se_k = iSE.ProjectionX("se_k")
-    me_k = iME.ProjectionX("me_k")
+        me = iME.Clone("ME kmult reweighted")
+        me.Reset("ICESM")
+        me_axis = me.GetYaxis()
 
-    if rew_range:
-        int_min = se_k.FindBin(rew_range[0])
-        int_max = se_k.FindBin(rew_range[1])
-    else:
-        int_min = 0
-        int_max = se_k.GetNbinsX()
+        se_k = iSE.ProjectionX("se_k")
+        me_k = iME.ProjectionX("me_k")
 
-    se_int = se_k.Integral(int_min, int_max)
-    me_int = me_k.Integral(int_min, int_max)
+        if rew_range:
+            int_min = se_k.FindBin(rew_range[0])
+            int_max = se_k.FindBin(rew_range[1])
+        else:
+            int_min = 0
+            int_max = se_k.GetNbinsX()
 
-    se_mult = iSE.ProjectionY("se_mult")
-    me_mult = iME.ProjectionY("me_mult")
+        se_int = se_k.Integral(int_min, int_max)
+        me_int = me_k.Integral(int_min, int_max)
 
-    me_k_unw = iME.ProjectionX("me_k_unw")
-    me_mult_unw = iME.ProjectionY("me_mult_unw")
+        se_mult = iSE.ProjectionY("se_mult")
+        me_mult = iME.ProjectionY("me_mult")
 
-    me_k.Reset("ICESM")
-    me_mult.Reset("ICESM")
+        me_k_unw = iME.ProjectionX("me_k_unw")
+        me_mult_unw = iME.ProjectionY("me_mult_unw")
 
-    # loop for the projection of each multiplicity slice
-    for ybin in range(1, iSE.GetNbinsY() + 1):
-        se_n = iSE.ProjectionX("se_bin", ybin, ybin)
-        me_n = iME.ProjectionX("me_bin", ybin, ybin)
+        me_k.Reset("ICESM")
+        me_mult.Reset("ICESM")
 
-        se_int = 1
-        me_int = 1
+        # loop for the projection of each multiplicity slice
+        for ybin in range(1, iSE.GetNbinsY() + 1):
+            se_n = iSE.ProjectionX("se_bin", ybin, ybin)
+            me_n = iME.ProjectionX("me_bin", ybin, ybin)
 
-        if se_int:
-            se_ratio = se_n.Integral(int_min, int_max) / se_int
-        if me_int:
-            me_ratio = me_n.Integral(int_min, int_max) / me_int
+            se_int = 1
+            me_int = 1
 
-        if me_ratio > 0. and se_ratio > 0.:
-            me_n.Scale(se_ratio / me_ratio)
-            me_mult.SetBinContent(ybin, me_n.Integral(int_min, int_max))
-            me_k.Add(me_n)
-            for xbin in range(1, me_n.GetNbinsX() + 1):        # fill th2 reweighted ME
-                #me.Fill(me_n.GetBinContent(xbin), me_axis.GetBinCenter(ybin))
-                #me.Fill(me_axis.GetBinCenter(ybin), me_n.GetBinContent(xbin))
-                me.SetBinContent(xbin, ybin, me_n.GetBinContent(xbin))
+            if se_int:
+                se_ratio = se_n.Integral(int_min, int_max) / se_int
+            if me_int:
+                me_ratio = me_n.Integral(int_min, int_max) / me_int
 
-    return [se_k, me_k, me_k_unw, me, se_mult, me_mult, me_mult_unw]
+            if me_ratio > 0. and se_ratio > 0.:
+                me_n.Scale(se_ratio / me_ratio)
+                me_mult.SetBinContent(ybin, me_n.Integral(int_min, int_max))
+                me_k.Add(me_n)
+                for xbin in range(1, me_n.GetNbinsX() + 1):        # fill th2 reweighted ME
+                    #me.Fill(me_n.GetBinContent(xbin), me_axis.GetBinCenter(ybin))
+                    #me.Fill(me_axis.GetBinCenter(ybin), me_n.GetBinContent(xbin))
+                    me.SetBinContent(xbin, ybin, me_n.GetBinContent(xbin))
 
-# split th3 in mt range and reweight each slice in multiplicity
-# output: [[name, mult-k SE, reweighted mult-k ME], [bin 2], ...]
-def reweight3D(iSE, iME, bins3d, rew_range):
-    """
-    This function takes as input a 3D SE and ME distribution
-    and splits them in mt by the provided binning.
-    The resulting 2D mult/k* plots are then reweighted.
+        return [se_k, me_k, me_k_unw, me, se_mult, me_mult, me_mult_unw]
 
-    The output is a list for the individual mt bins with the name (mt limits), SE, ME:
-        [[name, SE mult/k*, ME mult/k* reweighted], [bin 2], ...]
-    """
-    histos = getBinRangeHistos3D(iSE, iME, "mt", bins3d)        # split th3 in mt and get a list of mult-k histos
-    out = []
+    
+    # def reweight3D(iSE, iME, bins3d, rew_range):
+    #     """
+    #     This function takes as input a 3D SE and ME distribution
+    #     and splits them in mt by the provided binning.
+    #     The resulting 2D mult/k* plots are then reweighted.
 
-    for hist in histos:
-        out.append([hist[0], hist[1], reweight(hist[1], hist[2], rew_range)[3].Clone(hist[0])])        # append the reweighted th2 ME distribution
+    #     The output is a list for the individual mt bins with the name (mt limits), SE, ME:
+    #         [[name, SE mult/k*, ME mult/k* reweighted], [bin 2], ...]
+    #     """
+    #     histos = AnalysisUtils.getBinRangeHistos3D(iSE, iME, "mt", bins3d)        # split th3 in mt and get a list of mult-k histos
+    #     out = []
 
-    return out
+    #     for hist in histos:
+    #         out.append([hist[0], hist[1], AnalysisUtils.reweight(hist[1], hist[2], rew_range)[3].Clone(hist[0])])        # append the reweighted th2 ME distribution
 
-# 4d percentile histos
-def getProj4d(iSE, iME, perc_range):
-    se4d = iSE.Clone("4d_perc_se")
-    me4d = iME.Clone("4d_perc_me")
+    #     return out
 
-    axis = se4d.GetAxis(3)
+    # # 4d percentile histos
+    # def getProj4d(iSE, iME, perc_range, axis_index):
+    #     """
+    #     Project a 4D histogram to 3 dimension
+    #     --
+    #     iSE: Same Event Distribution
+    #     iME: Mixed Event Distribution
+    #     perc_range: percentile range for projection
+    #     axis_index: axis that should be projected
+    #     """
+    #     se4d = iSE.Clone("4d_perc_se")
+    #     me4d = iME.Clone("4d_perc_me")
 
-    perc_low = perc_range[0]
-    perc_up  = perc_range[1]
+    #     axis = se4d.GetAxis(axis_index)
 
-    bin_low = axis.FindBin(perc_low)
-    bin_up  = axis.FindBin(perc_up)
+    #     # set the projection range
+    #     perc_low = perc_range[0]
+    #     perc_up  = perc_range[1]
 
-    # lower the upper bin number if it is right on the next bin's lower edge
-    if perc_up == axis.GetBinLowEdge(bin_up):
-        bin_up -= 1
+    #     # get bins
+    #     bin_low = axis.FindBin(perc_low)
+    #     bin_up  = axis.FindBin(perc_up)
 
-    se4d.GetAxis(3).SetRange(bin_low, bin_up)
-    me4d.GetAxis(3).SetRange(bin_low, bin_up)
+    #     # lower the upper bin number if it is right on the next bin's lower edge
+    #     if perc_up == axis.GetBinLowEdge(bin_up):
+    #         bin_up -= 1
 
-    se = se4d.Projection(0, 1, 2)
-    me = me4d.Projection(0, 1, 2)
+    #     se4d.GetAxis(axis_index).SetRange(bin_low, bin_up)
+    #     me4d.GetAxis(axis_index).SetRange(bin_low, bin_up)
 
-    return [se, me]
+    #     # find remaining axes
+    #     dim = [0,1,2,3].remove(axis_index)
+    #     a,b,c = dim[0], dim[1], dim[2]
 
-# returns rebinned copy of histo
-def rebin_hist(input_histo, binning):
-    histo = input_histo.Clone()
-    histo = histo.Rebin(binning)
-    return histo
+    #     se = se4d.Projection(a, b, c)
+    #     me = me4d.Projection(a, b, c)
 
-# generates list with rebin factors
-def bin2list(rebin):
-    rebin_list = []
-    if type(rebin) == int or type(rebin) == str:
-        rebin = [rebin]
-    elif type(rebin) != list:
-        return None
-    rebin_list.extend(rebin)
-    return rebin_list
-
-# generates the proper settings dictionary
-def config(dic_conf):
-    """
-    This function sets up all the configurable options
-    so that it is consitent and expandable.
-
-    Current options include:
-            "function":     'cf', 'syst', 'tf' -> for correlation function, systematics, template fits
-            "pair":         'pp', 'pl' -> for q&a plots relevant for individual analyses
-            "path":         "string" -> full path to the root file, might include ~/ for home directory
-            "file":         "string" -> name of the root file
-            "fullpath":     "string" -> full path and file name equal to "path" + "file"
-            "outDir":       "string" -> output directory
-            "rename":       "string" -> rename output file
-            "fileTDir":     "string" -> root file directory: path to directory inside the root file
-            "SE_path":       "string" -> path + name of the se plot inside the provided "fileTDir" if given
-            "ME_path":       "string" -> same as SE_path but for the ME distribution
-            "newfile":      'new', 'recreate', 'update' -> same option as in ROOT, 'new' will rename if file already exists
-            "mc":           'true', 'false' -> save monte carlo data from provided root file
-            "mcTDir":       "string" -> root file directory for the monte carlo data
-            "bins":         [list of floats] -> binning for differential analysis
-            "diff3d":       'mt', 'mult' -> project 3D plots first in mt/mult 2D and after in mult/mt 1D or vice versa
-            "bins3d":       [list of floats] -> binning for 3D plots to 2D plots
-            "yield":        [GeV, Deviation] -> integrated analysis: include systematics inside deviation for the GeV range
-            "rebin":        int or [list of ints] -> rebin output plots
-                                for tf: int -> all dca/cpa rebinned with int
-                                or      [list of ints] -> each int will correspond to one range of the binning if provided
-            "atype":        'int', 'dif' -> integrated analysis or differential analysis
-            "htype":        'k', 'mt', 'mult', 'mt3d', 'mult3d', 'mtmult', 'rew3d'
-                                'k'     -> k* - relative pair momentum distribution
-                                'mt'  -> mt vs k* distribution
-                                'mult'  -> multiplicity vs k* distribution
-                                'mt3d' -> mt vs k* from 3D distribution but integrated in mult
-                                'mult3d' -> mult vs k* from 3D distribution but integrated in mt
-                                'mtmult' -> mult vs mt vs k* 3D distribution
-                                'rew3d' -> mult vs mt vs k* 3D differentially in mt and reweighted in mult
-            "tftype":       'dca', 'cpa' -> option for the template fit plots
-            "templates":    [list of th1 plots] -> list of dca/cpa plots for fitting
-            "temp_init":   list of values to initialize fitting parameters
-            "temp_limits": list of limits of the fitting parameters
-            "namelist":     [list of strings] -> names of dca/cpa plots for fitting
-            "fitrange":     float -> fitrange for the template fitter
-            "normalize":    [float, float] -> normalization range for the correlation function
-            "percentile":   [low, upper] or int -> lower and upper edges or 0 to int for percentile cut
-            "include":      "string" or [list of strings] -> include these variations in the systematics
-            "exclude":      "string" or [list of strings] -> exclude these variations in the systematics
-            "interactive":  'True', 'False' -> include/exclude interactively variations in terminal
-            "debug":        'True', 'False' -> debug information in console
-            "print":        'True', 'False' -> print canvas as png
-    """
-
-    # settings dictionary skeleton
-    dic = {
-            "function":         None,
-            "pair":             None,
-            "path":             "",
-            "file":             None,
-            "fullpath":         None,
-            "fileTDir":         "",
-            "SE_path":           "",
-            "SE_path":           "",
-            "newfile":          None,
-            "mc":               None,
-            "mcTDir":           "",
-            "outDir":           "",
-            "rename":           None,
-            "bins":             None,
-            "bins3d":           None,
-            "diff3d":           "",
-            "diff3d2":          "",
-            "yield":            None,
-            "rebin":            None,
-            "atype":            None,
-            "htype":            None,
-            "tftype":           None,
-            "data":             None,
-            "templates":        None,
-            "temp_init":        None,
-            "temp_limits":      None,
-            "temp_fraction":    None,
-            "namelist":         None,
-            "fitrange":         None,
-            "percentile":       None,
-            "rewrange":         None,
-            "normalize":        None,
-            "include":          None,
-            "exclude":          None,
-            "debug":            False,
-            "print":            False,
-            "interactive":      False,
-        }
-
-    # keys to set values
-    keys_k      = ['k', 'kstar']
-    keys_mult   = ['mult', 'kmult']
-    keys_mult3d = ['mult3d', 'kmult3d']
-    keys_rew3d  = ['rew3d', 'rewmult']
-    keys_mt     = ['mt', 'kmt']
-    keys_mt3d   = ['mt3d', 'kmt3d']
-    keys_mtmult = ['mtmult','kmtmult']
-    keys_4d     = ['perc', '4d', '4dim', '4dims']
-    keys_rew4d  = ['rew4d', 'rewperc']
-
-    keys_int    = ['int', 'integrated']
-    keys_dif    = ['diff', 'dif', 'differential']
-
-    # initialize values
-    entries = ['function',      # function to be used
-               'path',          # path to input file
-               'fileTDir',      # root folder where getter functions are used
-               'mc',            # path to mc root file
-               'mcTDir',        # mc folder inside root file
-               'rename',        # rename output file
-               'templates',     # list of template histos
-               'namelist',      # list of template histos names
-               'temp_init',     # initialize template fitting values
-               'temp_limits',   # limits for template fitting parameters
-               'temp_fraction', # set fraction with dictionary {'name', 'temp_init', 'temp_limits'}
-               'fitrange',      # fit range for templates
-               'signalrange',   # signal range to evaluate template fractions
-               'normalize',     # range to normalize cf
-               'data',          # not used
-               'bins3d',        # bins to split 3d histo
-               'bins',          # bins to split 2d histo
-               'SE_path',        # root folder with SE histo
-               'ME_path',        # root folder with ME histo
-               "filepath",      # file path of input root file
-               "atype"
-               ]
-    for entry in entries:
-        if entry in dic_conf:
-            dic[entry] = dic_conf[entry]
-
-    # type of particle pair
-    if 'pair' in dic_conf:
-        if dic_conf['pair']:
-            dic['pair'] = dic_conf['pair'].lower()
-
-    # file name, file directory
-    if 'file' in dic_conf:
-        if dic_conf['file']:
-            path_name = dic_conf['file'].rsplit('/', 1)
-            if len(path_name) == 1:
-                dic['file']  = path_name[0]
-            else:
-                dic['path'] = FU.path_expand(path_name[0]) + '/'
-                dic['file']  = path_name[1]
-            dic['fullpath'] = dic['path'] + dic['file']
-
-    # output directory
-    if 'outDir' in dic_conf:
-        if dic_conf['outDir'] != "" and dic_conf['outDir']:
-            dic['outDir'] = FU.path_expand(dic_conf['outDir'])
-            if ROOT.gSystem.AccessPathName(dic['outDir']):
-                print("output directory \"" + dic['outDir'] + "\" does not exist!")
-                exit()
-    else:
-        dic['outDir'] = dic['path']
-
-    # create file
-    if 'newfile' in dic_conf:
-        if dic_conf['newfile'] in [1, "new"]:
-            dic['newfile'] = "new"
-        if dic_conf['newfile'] in [2, "recreate"]:
-            dic['newfile'] = "recreate"
-        if dic_conf['newfile'] in [3, "update"]:
-            dic['newfile'] = "update"
-
-    # histogram and analysis type #TODO: was ist das? WArum resettet es unsere eingaben?
-    if 'type' in dic_conf:
-        dic_conf['atype'] = dic_conf['type'][0]
-        dic_conf['htype'] = dic_conf['type'][1]
-        if len(dic_conf['type']) > 2:
-            dic_conf['diff3d'] = dic_conf['type'][2]
-
-    # analysis type
-    if 'atype' in dic_conf:
-        atype = dic_conf['atype']
-        if type(atype) == str:
-            atype = atype.lower()
-        if atype in keys_int:
-            dic['atype'] = 'int'
-        elif atype in keys_dif:
-            dic['atype'] = 'dif'
-
-    # histogram type
-    if 'htype' in dic_conf:
-        htype = dic_conf['htype']
-        if type(htype) == str:
-            htype = htype.lower()
-        if htype in keys_4d:
-            dic['htype'] = '4d'
-        elif htype in keys_rew4d:
-            dic['htype'] = 'rew4d'
-            dic['diff3d'] = 'mt'
-        elif htype in keys_k:
-            dic['htype'] = 'k'
-        elif htype in keys_mult:
-            dic['htype'] = 'mult'
-        elif htype in keys_mult3d:
-            dic['htype'] = 'mult3d'
-        elif htype in keys_rew3d:
-            dic['htype'] = 'rew3d'
-            dic['diff3d'] = 'mt'
-        elif htype in keys_mt:
-            dic['htype'] = 'mt'
-        elif htype in keys_mt3d:
-            dic['htype'] = 'mt3d'
-        elif htype in keys_mtmult:
-            dic['htype'] = 'mtmult'
-
-    # template fit type
-    if 'tftype' in dic_conf:
-        if dic_conf['tftype']:
-            tftype = dic_conf['tftype'].lower()
-            if tftype == 'dca':
-                dic['tftype'] = 'dca'
-            elif tftype == 'cpa':
-                dic['tftype'] = 'cpa'
-
-    # which axis to be used for the first split in a 3D analysis
-    if 'diff3d' in dic_conf:
-        diff3d = dic_conf['diff3d']
-        if type(diff3d) == str:
-            diff3d = diff3d.lower()
-        if diff3d in keys_mult:
-            dic['diff3d'] = 'mult'
-            dic['diff3d2'] = 'mt'
-        elif diff3d in keys_mt:
-            dic['diff3d'] = 'mt'
-            dic['diff3d2'] = 'mult'
-
-    # yield setting to exclude systematic variations below a value of GeV that vary by a given percentage
-    # input: [GeV, %]
-    if 'yield' in dic_conf:
-        dic['yield'] = dic_conf['yield']
-        if dic['yield'] and len(dic['yield']) != 2:
-            print("'yield' accepts [GeV, deviation], where GeV defines [0, GeV) and deviation the percentage!")
-
-    # rebin factor/s
-    if 'rebin' in dic_conf:
-        dic['rebin'] = bin2list(dic_conf['rebin'])
-
-    # rewrange
-    if 'rewrange' in dic_conf:
-        if dic_conf['rewrange'] and type(dic_conf['rewrange']) != list:
-            print("'rewrange' accepts [min, max]!")
-        dic['rewrange'] = dic_conf['rewrange']
-
-    # percentile range
-    if 'percentile' in dic_conf:
-        if type(dic_conf['percentile']) == int:
-            dic['percentile'] = [0, dic_conf['percentile']]
-        elif type(dic_conf['percentile']) == list:
-            if len(dic_conf['percentile']) == 1:
-                dic['percentile'] = [0, dic_conf['percentile'][0]]
-            else:
-                dic['percentile'] = dic_conf['percentile']
-
-    # include variations
-    if 'include' in dic_conf:
-        dic['include'] = bin2list(dic_conf['include'])
-
-    # exclude variations
-    if 'exclude' in dic_conf:
-        dic['exclude'] = bin2list(dic_conf['exclude'])
-
-    if 'debug' in dic_conf:
-        dic['debug'] = bool(dic_conf['debug'])
-
-    if 'print' in dic_conf:
-        dic['print'] = bool(dic_conf['print'])
-
-    if 'interactive' in dic_conf:
-        dic['interactive'] = bool(dic_conf['interactive'])
-
-    return dic
+    #     return [se, me]
+     
+    
+    def rebin_hist(input_histo, binning):
+        """
+        returns rebinned copy of histo
+        """
+        histo = input_histo.Clone()
+        histo = histo.Rebin(binning)
+        return histo
 

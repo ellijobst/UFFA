@@ -54,47 +54,46 @@ mtBins = [0,1.02,1.14,1.2,1.26,1.38,1.56,1.86,4.5]
 multBins = [0, 11, 20, 200]
 multBins = [0, 200]
 
-#filename = sys.argv[1]
 filename = "root_input/pL_22all.root"
 filename = "AnalysisResults_sqm.root"
 filename = "maps.root"
 
 templates = ""
 
-# f1 = FDR.FemtoDreamReader(templates, "_base-tempFit")
-# mc_plots = []
-# mc_plots.append(f1.getHisto("Tracks_one_MC/hDCAxy_Primary"))
-# mc_plots.append(f1.getHisto("Tracks_one_MC/hDCAxy_DaughterLambda"))
-# mc_plots.append(f1.getHisto("Tracks_one_MC/hDCAxy_DaughterSigmaplus"))
-# mc_plots.append(f1.getHisto("Tracks_one_MC/hDCAxy_Fake"))
-
 namelist = ['prim', 'lam', 'sig', 'fake']
 
 settings_cf = {
-        "function":     'cf',
-        "pair":         'pp',
-        "filepath":     "./Final.root",
-        "SE_path":       "femto-dream-pair-task-track-track_apBase/SameEvent/relPairDist", #path to the SE distr. in the input file
-        "ME_path":       "femto-dream-pair-task-track-track_apBase/MixedEvent/relPairDist", #path to the ME distr. in the input file
-        "newfile":      "recreate", #mode for output file
-        "outDir":       opath,
-        "mc":           None,
-        "mcTDir":       "",
-        "rename":       "CF_Test",
-        "atype":        'int',
-        "dimension":    1, # dimension of the input histogram
-        "htype":        'kstar',
-        "kstar_axis":   0, #TODO: wo startet es?
-        "mult_axis":    1,
-        "higher_dimension_axis":   [[2, [0.1,0.2]]], #[axis_index, [projection range]]
-        #"diff3d":       'mt',
-        "bins3d":       mtBins,
-        "bins":         multBins,
-        "rebin":        [2, 5, 10],
-        # "rewrange":     [0, 1.0],
-        "percentile":   [0, 20],
-        "normalize":    [0.24, 0.34],
-        "debug":        False
+        "function":             'cf',
+        "pair":                 'pp',
+        # input file
+        "filepath":             "./Final.root",
+        "SE_path":              "femto-dream-pair-task-track-track_apBase/SameEvent/relPairDist", #path to the SE distr. in the input file
+        "ME_path":              "femto-dream-pair-task-track-track_apBase/MixedEvent/relPairDist", #path to the ME distr. in the input file
+        
+        # output file
+        "newfile":              "recreate", #mode for output file
+        "outDir":               opath,
+        "rename":               "CF_Test",
+
+        # MC
+        "mc":                   None,
+        "mcTDir":               "",
+        
+        # input histogram
+        "dimension":            1, # dimension of the input histogram
+        "kstar_axis":           0, #axis labelling starts from 0 
+        "reweighting_axis":     1, # if None, then no reweighting is happening
+        "reweighting_bins":     [0, 11, 20, 200],
+        "reweighting_range":    [0, 1.0],
+        "projection_axes":      [[2, [0.1,0.2]]], #[axis_index, [projection range]]
+        #"diff3d":              'mt',
+        # "bins3d":             mtBins,
+        # "bins":               multBins,
+        "rebin_factors":        [2, 5, 10],
+        # "rewrange":           [0, 1.0],
+        "percentile":           [0, 20],
+        "normalization_range":  [0.24, 0.34], #if none given the default is [0.24, 0.34]
+        "debug":                False
     }
 
 settings_tf = {
@@ -157,6 +156,6 @@ settings_syst2 = {
         "debug":         True
     }
 
-FA.UFFA(settings_cf)
-# UFFA.UFFA(settings_cf)
+
+UFFA.UFFA(settings_cf)
 

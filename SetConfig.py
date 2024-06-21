@@ -1,7 +1,7 @@
 import ROOT
 import FileUtils as FU
 
-
+#TODO: adapt for changed config!
 # generates list with rebin factors
 def bin2list(rebin):
     rebin_list = []
