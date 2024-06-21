@@ -3,11 +3,12 @@ import FemtoAnalysis as FA
 import FemtoDreamReader as FDR
 import FemtoDreamSaver as FDS
 import CombinedTemplateFit as TF
-from FemtoAnalysis import Systematics
+from Systematics import Systematics
+from SetConfig import config
 
 class UFFA():
     def UFFA(settings):
-        conf = FA.config(settings)
+        conf = config(settings)
         if conf['function'] == 'cf':
             UFFA.UFFA_cf(conf)
         elif conf['function'] == 'tf':
@@ -24,14 +25,14 @@ class UFFA():
 
     # correlation function
     def UFFA_cf(settings):
-        conf = FA.config(settings)
+        conf = config(settings)
         fdr = FDR.FemtoDreamReader(conf['fullpath'], conf['fileTDir'])
         ch = FA.cf_handler(fdr, conf)
         fds = FDS.FemtoDreamSaver(conf, ch.get_histos())
 
     # template fits
     def UFFA_tf(settings):
-        conf = FA.config(settings)
+        conf = config(settings)
         if conf['file']:
             fdr1 = FDR.FemtoDreamReader(conf['fullpath'], conf['fileTDir'])
             dca_data = fdr1.get_dca()
@@ -55,7 +56,7 @@ class UFFA():
 
     # template fits 2d
     def UFFA_tf2d(settings):
-        conf = FA.config(settings)
+        conf = config(settings)
         dca_data = conf['data']
         dca_mcplots = conf['templates']
 
@@ -66,7 +67,7 @@ class UFFA():
 
     # combined template fits
     def UFFA_ctf(settings):
-        conf = FA.config(settings)
+        conf = config(settings)
         if conf['file']:
             fdr1 = FDR.FemtoDreamReader(conf['fullpath'], conf['fileTDir'])
             dca_data = fdr1.get_dca()
@@ -90,7 +91,7 @@ class UFFA():
 
     # systematics
     def UFFA_syst(settings):
-        conf = FA.config(settings)
+        conf = config(settings)
         fdr = FDR.FemtoDreamReader(conf['fullpath'], conf['fileTDir'])
 
         # default cf
@@ -212,7 +213,7 @@ class UFFA():
 
     # systematics
     def UFFA_syst_3d(settings):
-        conf = FA.config(settings)
+        conf = config(settings)
         fdr = FDR.FemtoDreamReader(conf['fullpath'], conf['fileTDir'])
 
         # default cf
